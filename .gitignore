@@ -1,0 +1,32 @@
+# Python virtual environment
+.venv/
+
+# Environment variables and secrets
+.env
+.env.local
+
+# Python-generated cache files
+__pycache__/
+*.py[cod]
+
+# Testing and code-quality caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Application logs
+*.log
+logs/
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
