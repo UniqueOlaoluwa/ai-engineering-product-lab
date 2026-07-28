@@ -1,30 +1,38 @@
 """Command-line entry point for the AI Engineering Product Lab."""
 
-from app.prompt_builder import ROLE_INSTRUCTIONS, build_prompt, normalize_role
+from app.prompt_builder import (
+    ROLE_CONFIGS,
+    build_prompt,
+    get_role_name,
+    normalize_role,
+)
 
 EXIT_COMMANDS = {"exit", "quit"}
 
 
 def create_mock_reply(prompt: str, selected_role: str) -> str:
     """Create a temporary mock response for the generated prompt."""
+    role_name = get_role_name(selected_role)
+
     return (
-        f"[Mock {selected_role} assistant]\n"
+        f"[Mock {role_name}]\n"
         f"The application successfully built this prompt:\n\n{prompt}"
     )
 
 
 def display_available_roles() -> None:
-    """Display the assistant roles available to the user."""
+    """Display the configured assistant roles."""
     print("Available assistant roles:")
 
-    for role in ROLE_INSTRUCTIONS:
-        print(f"- {role}")
+    for role_key, role_config in ROLE_CONFIGS.items():
+        role_name = role_config["name"]
+        print(f"- {role_key}: {role_name}")
 
 
 def main() -> None:
-    """Run the role-based command-line assistant."""
-    print("AI WebCo Prompt Assistant v0.2")
-    print("This version builds role-based prompts.")
+    """Run the JSON-configured command-line assistant."""
+    print("AI WebCo Prompt Assistant v0.3")
+    print("This version loads role templates from JSON.")
     print("Type 'exit' or 'quit' to close the program.\n")
 
     display_available_roles()
@@ -38,7 +46,10 @@ def main() -> None:
             f"Using '{selected_role}' instead."
         )
 
-    print(f"\nActive role: {selected_role}\n")
+    print(
+        f"\nActive role: "
+        f"{selected_role} — {get_role_name(selected_role)}\n"
+    )
 
     while True:
         user_message = input("You: ")

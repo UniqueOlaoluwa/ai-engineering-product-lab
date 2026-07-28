@@ -1,33 +1,28 @@
 """Utilities for building role-based prompts."""
 
-DEFAULT_ROLE = "support"
+from typing import Any
 
-ROLE_INSTRUCTIONS = {
-    "business": (
-        "You are a practical AI business assistant. "
-        "Help business owners understand problems, workflows, and useful automation opportunities."
-    ),
-    "support": (
-        "You are a helpful customer-support assistant. "
-        "Respond clearly, politely, and practically."
-    ),
-    "clinic_admin": (
-        "You are a clinic administrative assistant. "
-        "Help only with appointments, reminders, patient routing, clinic information, "
-        "and human handoff. Do not diagnose, prescribe, interpret laboratory results, "
-        "or make clinical decisions."
-    ),
-}
+from app.templates import load_prompt_templates
+
+PROMPT_TEMPLATES = load_prompt_templates()
+DEFAULT_ROLE: str = PROMPT_TEMPLATES["default_role"]
+ROLE_CONFIGS: dict[str, dict[str, Any]] = PROMPT_TEMPLATES["roles"]
 
 
 def normalize_role(role: str) -> str:
-    """Return a supported role or fall back to the default role."""
+    """Return a supported role or fall back to the configured default role."""
     cleaned_role = role.strip().lower()
 
-    if cleaned_role in ROLE_INSTRUCTIONS:
+    if cleaned_role in ROLE_CONFIGS:
         return cleaned_role
 
     return DEFAULT_ROLE
+
+
+def get_role_name(role: str) -> str:
+    """Return the display name for a supported or fallback role."""
+    selected_role = normalize_role(role)
+    return str(ROLE_CONFIGS[selected_role]["name"])
 
 
 def build_prompt(user_message: str, assistant_role: str) -> str:
@@ -38,7 +33,7 @@ def build_prompt(user_message: str, assistant_role: str) -> str:
         raise ValueError("User message cannot be empty.")
 
     selected_role = normalize_role(assistant_role)
-    role_instruction = ROLE_INSTRUCTIONS[selected_role]
+    role_instruction = str(ROLE_CONFIGS[selected_role]["instruction"])
 
     return (
         f"{role_instruction}\n\n"

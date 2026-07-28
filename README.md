@@ -17,19 +17,130 @@ The goal is to build real AI applications that can become:
 
 ## Current Project
 
-### Project 1: AI Prompt Assistant
+### Project 1: Configurable AI Prompt Assistant
 
-The current version is a command-line assistant that:
+The current command-line application:
 
 - accepts user messages
+- loads assistant roles from JSON configuration
+- supports business, customer-support, clinic-admin, and AI-learning roles
 - validates empty input
-- returns a temporary mock response
-- supports `exit` and `quit` commands
-- runs without a paid AI API
+- uses safe fallback behaviour for unknown roles
+- separates application logic from prompt configuration
+- runs with a mock model provider and requires no paid AI API
+
+## Current Architecture
+
+```text
+User
+  ↓
+Command-Line Interface
+  ↓
+Role Normalization and Prompt Builder
+  ↓
+JSON Prompt Configuration
+  ↓
+Mock Assistant Response
+```
+
+The project currently separates:
+
+- user-interface logic in `app/main.py`
+- prompt-building logic in `app/prompt_builder.py`
+- JSON loading and validation in `app/templates.py`
+- assistant configuration in `data/prompt_templates.json`
 
 ## Run Locally
 
-Create and activate a virtual environment, then run:
+Create and activate a Python virtual environment.
+
+On Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Run the application:
 
 ```powershell
 python -m app.main
+```
+
+## Current Folder Structure
+
+```text
+ai-engineering-product-lab/
+├── app/
+│   ├── __init__.py
+│   ├── main.py
+│   ├── prompt_builder.py
+│   └── templates.py
+├── data/
+│   └── prompt_templates.json
+├── docs/
+│   └── learning_log.md
+├── tests/
+├── .env.example
+├── .gitignore
+├── README.md
+└── requirements.txt
+```
+
+## Product Roadmap
+
+1. AI Prompt Assistant
+2. Simple AI Chatbot API
+3. Business FAQ Bot
+4. Document Q&A and RAG Bot
+5. WhatsApp-Style AI Assistant
+6. Clinic AI Receptionist Demo
+7. Maternal-Care WhatsApp Assistant
+8. SME Customer-Support Automation Bot
+9. Deployed Portfolio Project
+10. Client-Ready AI WebCo Demo Package
+
+## Current Assistant Roles
+
+The available assistant roles are stored in:
+
+```text
+data/prompt_templates.json
+```
+
+Current roles:
+
+- Business Assistant
+- Customer Support Assistant
+- Clinic Administrative Assistant
+- AI Builders Network Learning Assistant
+
+New assistant roles can be added through JSON configuration without rewriting the main application logic.
+
+## Safety
+
+This repository must use synthetic demonstration data during development.
+
+Do not commit:
+
+- API keys
+- passwords
+- `.env` files
+- patient information
+- confidential client information
+- private access tokens
+- database credentials
+
+The clinic-administration role must not diagnose, prescribe, interpret laboratory results, or make clinical decisions.
+
+## Learning Documentation
+
+Development progress and concepts practised are recorded in:
+
+```text
+docs/learning_log.md
+```
+
+## Author
+
+Orobiyi Olaoluwa Ayomide  
+Founder, AI WebCo and AI Builders Network
