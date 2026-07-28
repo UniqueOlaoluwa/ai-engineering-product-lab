@@ -71,3 +71,34 @@
 Application logic and client-specific configuration should not always be mixed together.
 
 The Python code controls how the assistant works, while the JSON file controls which assistant roles and instructions are available.
+
+---
+
+## Day 4 — Custom Errors and Safe Startup
+
+### What I built
+
+- Created custom exceptions for prompt-template failures
+- Added detailed validation for JSON configuration structure
+- Added lazy configuration loading
+- Cached the loaded configuration in memory
+- Separated application startup from the interactive assistant
+- Added user-friendly handling for configuration failures
+- Tested missing files, invalid structures, and controlled startup errors
+
+### Concepts practised
+
+- Custom Python exceptions
+- Exception inheritance
+- Defensive configuration validation
+- Lazy loading
+- Function caching
+- Safe application startup
+- Controlled failure testing
+- User-friendly error messages
+
+### Key lesson
+
+A reliable application should not fail with an unclear technical traceback when a predictable configuration problem occurs.
+
+The application should identify the type of failure, explain what went wrong, and tell the developer what to check.

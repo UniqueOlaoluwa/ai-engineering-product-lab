@@ -28,17 +28,27 @@ The current command-line application:
 - uses safe fallback behaviour for unknown roles
 - separates application logic from prompt configuration
 - runs with a mock model provider and requires no paid AI API
+- validates the structure of its JSON configuration
+- uses custom exceptions for configuration failures
+- loads and caches configuration safely
+- displays useful startup messages instead of crashing on known configuration errors
+
+## Current Architecture
 
 ## Current Architecture
 
 ```text
 User
   ↓
+Safe Application Startup
+  ↓
 Command-Line Interface
   ↓
 Role Normalization and Prompt Builder
   ↓
-JSON Prompt Configuration
+Cached JSON Configuration Loader
+  ↓
+Configuration Validation
   ↓
 Mock Assistant Response
 ```

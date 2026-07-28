@@ -1,8 +1,9 @@
 """Command-line entry point for the AI Engineering Product Lab."""
 
+from app.exceptions import PromptTemplateError
 from app.prompt_builder import (
-    ROLE_CONFIGS,
     build_prompt,
+    get_role_configs,
     get_role_name,
     normalize_role,
 )
@@ -22,17 +23,19 @@ def create_mock_reply(prompt: str, selected_role: str) -> str:
 
 def display_available_roles() -> None:
     """Display the configured assistant roles."""
+    role_configs = get_role_configs()
+
     print("Available assistant roles:")
 
-    for role_key, role_config in ROLE_CONFIGS.items():
+    for role_key, role_config in role_configs.items():
         role_name = role_config["name"]
         print(f"- {role_key}: {role_name}")
 
 
-def main() -> None:
-    """Run the JSON-configured command-line assistant."""
-    print("AI WebCo Prompt Assistant v0.3")
-    print("This version loads role templates from JSON.")
+def run_assistant() -> None:
+    """Run the interactive role-based assistant."""
+    print("AI WebCo Prompt Assistant v0.4")
+    print("This version includes safer configuration handling.")
     print("Type 'exit' or 'quit' to close the program.\n")
 
     display_available_roles()
@@ -66,6 +69,19 @@ def main() -> None:
 
         assistant_reply = create_mock_reply(prompt, selected_role)
         print(f"Assistant:\n{assistant_reply}\n")
+
+
+def main() -> None:
+    """Start the application and handle configuration failures safely."""
+    try:
+        run_assistant()
+    except PromptTemplateError as error:
+        print("The application could not start.")
+        print(f"Configuration error: {error}")
+        print(
+            "Check data/prompt_templates.json, correct the problem, "
+            "and restart the application."
+        )
 
 
 if __name__ == "__main__":
