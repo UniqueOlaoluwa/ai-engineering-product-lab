@@ -8,7 +8,8 @@ from app.prompt_builder import (
     normalize_role,
 )
 from app.providers.base import BaseLLMProvider
-from app.providers.mock import MockLLMProvider
+from app.config import load_settings
+from app.providers.factory import create_provider
 
 EXIT_COMMANDS = {"exit", "quit"}
 
@@ -70,7 +71,8 @@ def run_assistant(provider: BaseLLMProvider) -> None:
 
 def main() -> None:
     """Start the application with safe configuration handling."""
-    provider = MockLLMProvider()
+    settings = load_settings()
+    provider = create_provider(settings)
 
     try:
         run_assistant(provider)
