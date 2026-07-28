@@ -39,6 +39,10 @@ The current command-line application:
 - keeps private configuration in a Git-ignored .env file
 - selects the model provider through a provider factory
 - handles unsupported provider configuration safely
+- loads application settings from environment variables
+- keeps private configuration in a Git-ignored `.env` file
+- selects the model provider through a provider factory
+- handles unsupported provider configuration safely
 
 
 ## Current Architecture
@@ -63,6 +67,21 @@ Provider Interface
 Mock Model Provider
   ↓
 Assistant Response
+```
+
+The project currently separates:
+
+- environment configuration in `.env`
+- public configuration examples in `.env.example`
+- settings loading in `app/config.py`
+- provider creation in `app/providers/factory.py`
+- safe startup and interaction flow in `app/main.py`
+- prompt-building logic in `app/prompt_builder.py`
+- custom application errors in `app/exceptions.py`
+- JSON loading and validation in `app/templates.py`
+- provider interface in `app/providers/base.py`
+- mock-provider behaviour in `app/providers/mock.py`
+- assistant-role configuration in `data/prompt_templates.json`
 ```
 
 The project currently separates:

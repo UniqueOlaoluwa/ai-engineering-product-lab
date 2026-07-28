@@ -164,3 +164,37 @@ The assistant can call `provider.generate(prompt)` while the provider decides ho
 Application settings and secrets should not be hard-coded inside source files.
 
 The application can read configuration from its environment and create the correct provider without changing the main interaction logic.
+
+---
+
+## Day 6 — Environment Configuration and Provider Factory
+
+### What I built
+
+- Installed python-dotenv
+- Created a private local .env configuration file
+- Added structured application settings with a dataclass
+- Added environment-variable normalization
+- Created a provider factory
+- Selected the model provider through configuration
+- Added safe handling for unsupported provider settings
+- Confirmed that the private .env file is ignored by Git
+- Debugged a temporary terminal environment-variable override
+
+### Concepts practised
+
+- Environment variables
+- Secret separation
+- .env files
+- Python dataclasses
+- Optional configuration values
+- Dependency management
+- Provider factories
+- Configuration precedence
+- Configuration-based application behaviour
+
+### Key lesson
+
+Application settings and secrets should not be hard-coded inside source files.
+
+Existing terminal environment variables can override values loaded from a .env file, so temporary test variables must be removed after testing.
