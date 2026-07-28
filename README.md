@@ -32,6 +32,11 @@ The current command-line application:
 - uses custom exceptions for configuration failures
 - loads and caches configuration safely
 - displays useful startup messages instead of crashing on known configuration errors
+- uses a replaceable AI model provider interface
+- includes a mock provider for development without API costs
+- handles provider timeouts and request failures without closing the application
+
+## Current Architecture
 
 ## Current Architecture
 
@@ -48,9 +53,11 @@ Role Normalization and Prompt Builder
   ↓
 Cached JSON Configuration Loader
   ↓
-Configuration Validation
+Provider Interface
   ↓
-Mock Assistant Response
+Mock Model Provider
+  ↓
+Assistant Response
 ```
 
 The project currently separates:

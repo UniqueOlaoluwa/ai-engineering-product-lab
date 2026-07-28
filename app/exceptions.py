@@ -15,3 +15,15 @@ class InvalidTemplateJSONError(PromptTemplateError):
 
 class InvalidTemplateStructureError(PromptTemplateError):
     """Raised when the prompt-template configuration has an invalid structure."""
+    
+
+class ProviderError(Exception):
+    """Base exception for AI model provider failures."""
+
+
+class ProviderTimeoutError(ProviderError):
+    """Raised when an AI model provider takes too long to respond."""
+
+
+class ProviderRequestError(ProviderError):
+    """Raised when an AI model provider cannot complete a request."""

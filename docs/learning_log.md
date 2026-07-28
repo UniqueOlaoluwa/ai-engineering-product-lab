@@ -102,3 +102,33 @@ The Python code controls how the assistant works, while the JSON file controls w
 A reliable application should not fail with an unclear technical traceback when a predictable configuration problem occurs.
 
 The application should identify the type of failure, explain what went wrong, and tell the developer what to check.
+
+---
+
+## Day 5 — Replaceable Model Providers
+
+### What I built
+
+- Created a provider package
+- Added an abstract base class for AI model providers
+- Created a mock provider for local development
+- Added simulated timeout and request failures
+- Connected the provider to the command-line assistant
+- Kept provider failures from closing the application
+
+### Concepts practised
+
+- Python classes
+- Constructors
+- Instance variables
+- Inheritance
+- Abstract base classes
+- Dependency injection
+- Provider interfaces
+- Controlled service-failure testing
+
+### Key lesson
+
+The application should depend on a stable provider interface rather than one specific AI company.
+
+The assistant can call `provider.generate(prompt)` while the provider decides how the response is produced.
