@@ -21,11 +21,20 @@ class ChatRequest(BaseModel):
         description="The assistant role requested by the client.",
         examples=["business"],
     )
+    session_id: str = Field(
+        default="default-session",
+        min_length=1,
+        max_length=100,
+        description="A client-generated conversation session identifier.",
+        examples=["demo-session-001"],
+    )
 
 
 class ChatResponse(BaseModel):
     """Define the chatbot response returned by the API."""
 
+    message_id: int
+    session_id: str
     role: str
     role_name: str
     reply: str

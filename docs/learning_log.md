@@ -302,3 +302,40 @@ The command-line interface is useful for local interaction, while the FastAPI ba
 An API endpoint should define and validate both the data it accepts and the data it returns.
 
 FastAPI and Pydantic can reject malformed requests before they reach the main application logic.
+
+---
+
+## Day 10 — SQLite Conversation Storage
+
+### What I built
+
+- Added a local SQLite conversation database
+- Created a messages table
+- Saved chatbot exchanges after successful API requests
+- Added session IDs to group related conversations
+- Returned database message IDs in API responses
+- Added retrieval of saved messages by session
+- Added database tests with isolated test storage
+- Fixed Windows file-lock problems by explicitly closing SQLite connections
+- Confirmed the full test suite passes
+
+### Concepts practised
+
+- SQLite
+- Relational tables
+- Rows and columns
+- SQL CREATE TABLE
+- SQL INSERT
+- SQL SELECT
+- Parameterized SQL
+- Persistent application state
+- Session identifiers
+- Database connection management
+- Test isolation
+- Windows file locking
+
+### Key lesson
+
+A database makes application state persistent after the server stops.
+
+SQLite connections must be closed explicitly on Windows before test database files can be deleted safely.

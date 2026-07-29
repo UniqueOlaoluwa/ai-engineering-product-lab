@@ -55,7 +55,11 @@ The current command-line application:
 - returns structured chatbot responses
 - supports configurable assistant roles through the API
 - rejects malformed or incomplete requests automatically
-
+- stores successful chatbot exchanges in SQLite
+- groups conversations using session identifiers
+- returns database message IDs in chat responses
+- keeps local database files out of Git
+- includes isolated database tests
 
 ## Current Architecture
 
@@ -80,6 +84,8 @@ Provider Interface
   ↓
 Mock Model Provider
   ↓
+SQLite Conversation Storage
+  ↓
 Pydantic Response Model
   ↓
 Structured JSON Response
@@ -89,6 +95,7 @@ The project currently separates:
 
 - FastAPI routes in `app/api.py`
 - request and response schemas in `app/schemas.py`
+- SQLite storage logic in `app/database.py`
 - environment configuration in `.env`
 - public configuration examples in `.env.example`
 - settings loading in `app/config.py`
@@ -228,6 +235,49 @@ data/prompt_templates.json
 When no role is supplied, the API uses the configured default role.
 
 Malformed requests are rejected with validation responses before the main chatbot logic runs.
+
+## Conversation Storage
+
+Successful chatbot requests are stored in a local SQLite database:
+
+```text
+storage/conversations.db
+```
+
+Each saved exchange contains:
+
+- message ID
+- session ID
+- assistant role
+- user message
+- assistant response
+- provider name
+- creation time
+
+The database is excluded from Git and must not contain real patient or confidential client information during development.
+
+Example chat request:
+
+```json
+{
+  "message": "How can I reduce repeated delivery questions?",
+  "role": "business",
+  "session_id": "demo-session-001"
+}
+```
+
+The API returns the saved record identifier:
+
+```json
+{
+  "message_id": 1,
+  "session_id": "demo-session-001",
+  "role": "business",
+  "role_name": "Business Assistant",
+  "reply": "[Mock provider response] ...",
+  "provider": "MockLLMProvider"
+}
+```
 
 ## Product Roadmap
 

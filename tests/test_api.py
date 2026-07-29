@@ -15,31 +15,34 @@ def test_health_endpoint_returns_ok() -> None:
     assert response.json() == {
         "status": "ok",
         "application": "AI Engineering Product Lab",
-        "version": "0.3.0",
+        "version": "0.4.0",
     }
 
 
 def test_chat_endpoint_returns_business_response() -> None:
-    """A valid business request should return a structured response."""
+    """A valid business request should return a stored response."""
     response = client.post(
         "/chat",
         json={
             "message": "Help me improve customer support.",
             "role": "business",
+            "session_id": "api-test-session",
         },
     )
 
     response_data = response.json()
 
     assert response.status_code == 200
+    assert response_data["message_id"] >= 1
+    assert response_data["session_id"] == "api-test-session"
     assert response_data["role"] == "business"
     assert response_data["role_name"] == "Business Assistant"
     assert response_data["provider"] == "MockLLMProvider"
     assert "Help me improve customer support." in response_data["reply"]
 
 
-def test_chat_endpoint_uses_default_role() -> None:
-    """A request without a role should use customer support."""
+def test_chat_endpoint_uses_default_role_and_session() -> None:
+    """Missing optional fields should use configured defaults."""
     response = client.post(
         "/chat",
         json={
@@ -50,6 +53,7 @@ def test_chat_endpoint_uses_default_role() -> None:
     response_data = response.json()
 
     assert response.status_code == 200
+    assert response_data["session_id"] == "default-session"
     assert response_data["role"] == "support"
     assert response_data["role_name"] == "Customer Support Assistant"
 
@@ -61,6 +65,7 @@ def test_chat_endpoint_falls_back_for_unknown_role() -> None:
         json={
             "message": "What time do you close?",
             "role": "doctor",
+            "session_id": "fallback-test-session",
         },
     )
 
@@ -68,6 +73,7 @@ def test_chat_endpoint_falls_back_for_unknown_role() -> None:
 
     assert response.status_code == 200
     assert response_data["role"] == "support"
+    assert response_data["session_id"] == "fallback-test-session"
 
 
 def test_chat_endpoint_rejects_empty_message() -> None:
@@ -77,6 +83,7 @@ def test_chat_endpoint_rejects_empty_message() -> None:
         json={
             "message": "",
             "role": "support",
+            "session_id": "validation-session",
         },
     )
 
@@ -89,6 +96,7 @@ def test_chat_endpoint_rejects_missing_message() -> None:
         "/chat",
         json={
             "role": "business",
+            "session_id": "validation-session",
         },
     )
 
@@ -102,6 +110,7 @@ def test_chat_endpoint_rejects_wrong_message_type() -> None:
         json={
             "message": ["invalid", "message"],
             "role": "support",
+            "session_id": "validation-session",
         },
     )
 

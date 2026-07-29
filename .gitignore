@@ -30,3 +30,6 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Temporary test databases
+.test_storage/
