@@ -63,43 +63,191 @@ The current command-line application:
 - retrieves saved conversation history by session ID
 - returns 404 responses for unknown conversation sessions
 - validates nested conversation responses with Pydantic
+- assigns a traceable request ID to every HTTP request
+- returns request IDs through the `X-Request-ID` response header
+- records structured request-completion logs
+- validates client-supplied request IDs before logging
 
 ## Current Architecture
 
+```text
 Client
-  ↓
-FastAPI Route
-  ↓
-Pydantic Validation
-  ↓
+  │
+  │  HTTP request
+  │  Optional X-Request-ID header
+  ▼
+Request-ID and Logging Middleware
+  │
+  ├── validates a client-provided request ID
+  ├── generates a UUID when an ID is missing or unsafe
+  ├── records request method, path, status, and duration
+  └── adds X-Request-ID to the response
+  │
+  ▼
+FastAPI Route Layer
+  │
+  ├── GET /health
+  ├── POST /chat
+  └── GET /conversations/{session_id}
+  │
+  ▼
+Pydantic Validation Layer
+  │
+  ├── validates incoming chat requests
+  ├── applies default role and session values
+  ├── validates structured API responses
+  └── validates nested conversation-history records
+  │
+  ▼
 Application Logic
-  ↓
-Prompt and Provider Layer
-  ↓
-SQLite Storage
-  ↓
-Conversation Retrieval
-  ↓
-Structured JSON Response
+  │
+  ├── loads environment settings
+  ├── normalizes assistant roles
+  ├── loads role configuration
+  ├── builds role-specific prompts
+  └── converts application errors into HTTP responses
+  │
+  ▼
+Provider Factory
+  │
+  └── selects the configured language-model provider
+  │
+  ▼
+Provider Interface
+  │
+  └── defines a consistent generate() contract
+  │
+  ▼
+Mock LLM Provider
+  │
+  └── generates local test responses without a paid API
+  │
+  ▼
+SQLite Data Layer
+  │
+  ├── creates the messages table
+  ├── saves successful chatbot exchanges
+  ├── assigns database message IDs
+  └── retrieves conversation history by session ID
+  │
+  ▼
+Structured API Response
+  │
+  ├── validated JSON response body
+  └── X-Request-ID response header
+  │
+  ▼
+Client
 ```
 
-The project currently separates:
+### Request flow for `POST /chat`
 
-- FastAPI routes in `app/api.py`
-- request and response schemas in `app/schemas.py`
-- SQLite storage logic in `app/database.py`
-- environment configuration in `.env`
-- public configuration examples in `.env.example`
-- settings loading in `app/config.py`
-- provider creation in `app/providers/factory.py`
-- command-line interaction in `app/main.py`
-- prompt-building logic in `app/prompt_builder.py`
-- custom application errors in `app/exceptions.py`
-- JSON loading and validation in `app/templates.py`
-- provider interface in `app/providers/base.py`
-- mock-provider behaviour in `app/providers/mock.py`
-- assistant-role configuration in `data/prompt_templates.json`
-- automated tests in `tests/`
+```text
+Client sends message, role, and session ID
+  ↓
+Middleware assigns and logs a request ID
+  ↓
+Pydantic validates the request body
+  ↓
+Environment settings are loaded
+  ↓
+Provider factory selects the configured provider
+  ↓
+Role is normalized
+  ↓
+Role configuration is loaded from JSON
+  ↓
+Prompt builder creates a role-specific prompt
+  ↓
+Provider generates a response
+  ↓
+Conversation is saved in SQLite
+  ↓
+Pydantic validates the response
+  ↓
+FastAPI returns JSON with X-Request-ID
+```
+
+### Request flow for conversation retrieval
+
+```text
+Client requests GET /conversations/{session_id}
+  ↓
+Middleware assigns and logs a request ID
+  ↓
+FastAPI captures the session ID path parameter
+  ↓
+Database layer retrieves matching messages
+  ↓
+API returns 404 when the session does not exist
+  ↓
+Stored messages are converted into Pydantic models
+  ↓
+FastAPI returns structured conversation history
+```
+
+### Main application files
+
+- `app/api.py` — FastAPI application, routes, HTTP errors, and middleware registration
+- `app/schemas.py` — request and response validation models
+- `app/middleware.py` — request IDs, tracing, and request-completion logging
+- `app/logging_config.py` — centralized application logger configuration
+- `app/database.py` — SQLite connection, table creation, saving, and retrieval
+- `app/config.py` — environment-variable and application-settings loading
+- `app/prompt_builder.py` — role normalization and prompt construction
+- `app/templates.py` — JSON role-template loading and validation
+- `app/exceptions.py` — custom application and provider exceptions
+- `app/providers/base.py` — abstract provider interface
+- `app/providers/mock.py` — free local mock provider
+- `app/providers/factory.py` — provider selection and creation
+- `app/main.py` — command-line application entry point
+- `data/prompt_templates.json` — configurable assistant roles and instructions
+- `tests/test_api.py` — API route and integration tests
+- `tests/test_database.py` — SQLite persistence tests
+- `tests/test_middleware.py` — request tracing and middleware-security tests
+- `tests/test_config.py` — environment-configuration tests
+- `tests/test_prompt_builder.py` — prompt and role-behaviour tests
+- `tests/test_mock_provider.py` — provider-behaviour tests
+
+### Current API endpoints
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/health` | Reports whether the API is running |
+| `POST` | `/chat` | Generates and saves a role-specific chatbot response |
+| `GET` | `/conversations/{session_id}` | Retrieves saved conversation history |
+
+### Current storage
+
+The project uses a local SQLite database:
+
+```text
+storage/conversations.db
+```
+
+The database currently stores:
+
+- message ID
+- session ID
+- assistant role
+- user message
+- assistant response
+- provider name
+- creation time
+
+Local databases and temporary test databases are excluded from Git.
+
+### Current provider configuration
+
+The project currently uses:
+
+```text
+LLM_PROVIDER=mock
+```
+
+The mock provider allows the complete application flow to be developed and tested without API costs.
+
+The provider interface and factory allow a real provider to be added later without rewriting the API, prompt builder, database layer, or tests.
 
 ## Run Locally
 
@@ -316,6 +464,39 @@ with HTTP status:
 ```text
 404 Not Found
 ```
+## Request Tracing
+
+Every HTTP request receives a request identifier.
+
+When the client does not provide one, the application generates a UUID:
+
+```text
+X-Request-ID: b349fb6a-48cc-4e4a-88c9-9fc2fa07bccc
+```
+
+Clients may provide their own safe identifier:
+
+```text
+X-Request-ID: client-request-123
+```
+
+Accepted client identifiers may contain:
+
+- letters
+- numbers
+- hyphens
+- underscores
+- periods
+
+They must contain no more than 64 characters. Unsafe values are replaced with generated UUIDs.
+
+The same identifier appears in request logs:
+
+```text
+request_completed request_id=client-request-123 method=GET path=/health status_code=200 duration_ms=3.42
+```
+
+This allows one API request to be traced across client responses and server logs.
 
 ## Product Roadmap
 

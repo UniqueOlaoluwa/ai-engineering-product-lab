@@ -369,3 +369,40 @@ SQLite connections must be closed explicitly on Windows before test database fil
 The database layer returns raw application data, while the API layer decides how that data should be presented over HTTP.
 
 An empty database result can therefore become a `404 Not Found` response at the API boundary.
+
+---
+
+## Day 12 — Request IDs and Structured Logging
+
+### What I built
+
+- Added centralized application logging
+- Added HTTP request-logging middleware
+- Generated a unique UUID for requests without an identifier
+- Preserved valid request IDs supplied by clients
+- Returned request IDs through the `X-Request-ID` response header
+- Logged request method, path, status code, and duration
+- Added request IDs to failed-request logs
+- Validated client request IDs before writing them to logs
+- Replaced unsafe or overly long request IDs with generated UUIDs
+- Added middleware and request-ID tests
+
+### Concepts practised
+
+- FastAPI middleware
+- Request and response lifecycle
+- UUID generation
+- HTTP headers
+- Structured logging
+- Request tracing
+- Duration measurement
+- Regular expressions
+- Input validation
+- Log-injection prevention
+- Middleware integration testing
+
+### Key lesson
+
+Logs become much easier to investigate when every request has a traceable identifier.
+
+Even values used only for logging should be treated as untrusted input and validated before use.

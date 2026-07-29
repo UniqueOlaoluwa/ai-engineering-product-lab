@@ -9,6 +9,7 @@ from app.database import (
     save_message,
 )
 from app.exceptions import PromptTemplateError, ProviderError
+from app.middleware import request_logging_middleware
 from app.prompt_builder import build_prompt, get_role_name, normalize_role
 from app.providers.factory import create_provider
 from app.schemas import (
@@ -29,6 +30,8 @@ app = FastAPI(
     ),
     version=API_VERSION,
 )
+
+app.middleware("http")(request_logging_middleware)
 
 initialize_database()
 
