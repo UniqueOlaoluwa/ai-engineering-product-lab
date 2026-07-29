@@ -339,3 +339,33 @@ FastAPI and Pydantic can reject malformed requests before they reach the main ap
 A database makes application state persistent after the server stops.
 
 SQLite connections must be closed explicitly on Windows before test database files can be deleted safely.
+
+---
+
+## Day 11 — Conversation History Endpoint
+
+### What I built
+
+- Added a conversation-history response model
+- Added a stored-message response model
+- Added `GET /conversations/{session_id}`
+- Retrieved saved exchanges by session ID
+- Returned a 404 response for unknown sessions
+- Added API integration tests for conversation retrieval
+- Confirmed nested response validation with Pydantic
+
+### Concepts practised
+
+- FastAPI path parameters
+- Nested Pydantic models
+- Lists of structured records
+- HTTP 404 responses
+- Database retrieval through an API
+- API integration testing
+- Separation between route logic and SQL logic
+
+### Key lesson
+
+The database layer returns raw application data, while the API layer decides how that data should be presented over HTTP.
+
+An empty database result can therefore become a `404 Not Found` response at the API boundary.

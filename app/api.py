@@ -3,13 +3,23 @@
 from fastapi import FastAPI, HTTPException, status
 
 from app.config import load_settings
-from app.database import initialize_database, save_message
+from app.database import (
+    get_messages_by_session,
+    initialize_database,
+    save_message,
+)
 from app.exceptions import PromptTemplateError, ProviderError
 from app.prompt_builder import build_prompt, get_role_name, normalize_role
 from app.providers.factory import create_provider
-from app.schemas import ChatRequest, ChatResponse, HealthResponse
+from app.schemas import (
+    ChatRequest,
+    ChatResponse,
+    ConversationResponse,
+    HealthResponse,
+    StoredMessage,
+)
 
-API_VERSION = "0.4.0"
+API_VERSION = "0.5.0"
 
 app = FastAPI(
     title="AI Engineering Product Lab API",
@@ -81,6 +91,50 @@ def chat(request: ChatRequest) -> ChatResponse:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"AI provider error: {error}",
         ) from error
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
+
+
+@app.get(
+    "/conversations/{session_id}",
+    response_model=ConversationResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_conversation(session_id: str) -> ConversationResponse:
+    """Return all stored chatbot exchanges for a session."""
+    try:
+        messages = get_messages_by_session(session_id)
+
+        if not messages:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation session not found.",
+            )
+
+        stored_messages = [
+            StoredMessage(
+                id=message["id"],
+                role=message["role"],
+                user_message=message["user_message"],
+                assistant_reply=message["assistant_reply"],
+                provider=message["provider"],
+                created_at=message["created_at"],
+            )
+            for message in messages
+        ]
+
+        return ConversationResponse(
+            session_id=session_id,
+            message_count=len(stored_messages),
+            messages=stored_messages,
+        )
+
+    except HTTPException:
+        raise
 
     except ValueError as error:
         raise HTTPException(

@@ -1,6 +1,7 @@
 """Pydantic models used by the FastAPI application."""
 
 from pydantic import BaseModel, Field
+from datetime import datetime
 
 
 class ChatRequest(BaseModel):
@@ -47,3 +48,21 @@ class HealthResponse(BaseModel):
     status: str
     application: str
     version: str
+
+class StoredMessage(BaseModel):
+    """Represent one chatbot exchange retrieved from storage."""
+
+    id: int
+    role: str
+    user_message: str
+    assistant_reply: str
+    provider: str
+    created_at: datetime
+
+
+class ConversationResponse(BaseModel):
+    """Define the stored conversation returned by the API."""
+
+    session_id: str
+    message_count: int
+    messages: list[StoredMessage]

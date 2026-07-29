@@ -60,33 +60,25 @@ The current command-line application:
 - returns database message IDs in chat responses
 - keeps local database files out of Git
 - includes isolated database tests
+- retrieves saved conversation history by session ID
+- returns 404 responses for unknown conversation sessions
+- validates nested conversation responses with Pydantic
 
 ## Current Architecture
 
-```text
-Browser, PowerShell, Website, or External Client
+Client
   ↓
-FastAPI Endpoint
+FastAPI Route
   ↓
-Pydantic Request Validation
+Pydantic Validation
   ↓
-Role Normalization
+Application Logic
   ↓
-Prompt Builder
+Prompt and Provider Layer
   ↓
-JSON Role Configuration
+SQLite Storage
   ↓
-Environment Settings
-  ↓
-Provider Factory
-  ↓
-Provider Interface
-  ↓
-Mock Model Provider
-  ↓
-SQLite Conversation Storage
-  ↓
-Pydantic Response Model
+Conversation Retrieval
   ↓
 Structured JSON Response
 ```
@@ -277,6 +269,52 @@ The API returns the saved record identifier:
   "reply": "[Mock provider response] ...",
   "provider": "MockLLMProvider"
 }
+```
+## Conversation History Endpoint
+
+Stored conversations can be retrieved using:
+
+```text
+GET /conversations/{session_id}
+```
+
+Example:
+
+```text
+GET /conversations/demo-session-001
+```
+
+Successful response:
+
+```json
+{
+  "session_id": "demo-session-001",
+  "message_count": 1,
+  "messages": [
+    {
+      "id": 1,
+      "role": "business",
+      "user_message": "How can I improve customer support?",
+      "assistant_reply": "[Mock provider response] ...",
+      "provider": "MockLLMProvider",
+      "created_at": "2026-07-29T12:00:00"
+    }
+  ]
+}
+```
+
+Unknown sessions return:
+
+```json
+{
+  "detail": "Conversation session not found."
+}
+```
+
+with HTTP status:
+
+```text
+404 Not Found
 ```
 
 ## Product Roadmap
