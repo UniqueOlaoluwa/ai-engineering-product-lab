@@ -43,6 +43,8 @@ The current command-line application:
 - keeps private configuration in a Git-ignored `.env` file
 - selects the model provider through a provider factory
 - handles unsupported provider configuration safely
+- includes automated tests for prompts, configuration, and provider behaviour
+- verifies expected failures such as empty input, provider timeouts, and invalid requests
 
 
 ## Current Architecture
@@ -141,6 +143,30 @@ ai-engineering-product-lab/
 ├── README.md
 └── requirements.txt
 ```
+
+## Run Tests
+
+Run the complete automated test suite:
+
+```powershell
+python -m pytest
+```
+
+Run the tests with individual test names displayed:
+
+```powershell
+python -m pytest -v
+```
+
+The tests currently cover:
+
+- environment configuration
+- role normalization and fallback behaviour
+- prompt generation
+- clinic safety instructions
+- empty-input validation
+- mock-provider responses
+- provider timeout and request failures
 
 ## Product Roadmap
 

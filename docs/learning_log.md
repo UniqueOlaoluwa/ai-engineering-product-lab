@@ -198,3 +198,36 @@ The application can read configuration from its environment and create the corre
 Application settings and secrets should not be hard-coded inside source files.
 
 Existing terminal environment variables can override values loaded from a .env file, so temporary test variables must be removed after testing.
+
+---
+
+## Day 7 — Automated Testing and Week 1 Release
+
+### What I built
+
+- Installed pytest
+- Added automated tests for role normalization
+- Tested prompt generation and clinic safety instructions
+- Tested empty-message validation
+- Tested normal mock-provider responses
+- Tested provider timeout and request failures
+- Tested environment configuration helpers
+- Confirmed the complete command-line application still works
+
+### Concepts practised
+
+- Automated testing
+- pytest
+- Test discovery
+- Arrange, Act, Assert
+- Assertions
+- Testing exceptions
+- Test fixtures
+- Environment-variable testing with monkeypatch
+- Regression prevention
+
+### Key lesson
+
+Manual testing confirms that a user flow works today.
+
+Automated tests preserve expected behaviour and warn me when a future change breaks something that previously worked.
