@@ -267,3 +267,38 @@ Automated tests preserve expected behaviour and warn me when a future change bre
 An API gives other systems a structured way to communicate with my application.
 
 The command-line interface is useful for local interaction, while the FastAPI backend can later receive requests from WhatsApp, websites, mobile applications, and business systems.
+
+---
+
+## Day 9 — Chatbot API Endpoint
+
+### What I built
+
+- Created Pydantic request and response models
+- Added a POST /chat endpoint
+- Accepted structured JSON requests
+- Added role selection and safe fallback behaviour
+- Connected the API to the prompt builder
+- Connected the API to the configured model provider
+- Returned structured JSON responses
+- Added request validation for empty, missing, and invalid message values
+- Added HTTP error handling for provider and configuration failures
+- Expanded automated API tests
+
+### Concepts practised
+
+- HTTP POST requests
+- JSON request bodies
+- Pydantic models
+- Request validation
+- Response models
+- HTTP status codes
+- FastAPI error handling
+- Structured API responses
+- API integration testing
+
+### Key lesson
+
+An API endpoint should define and validate both the data it accepts and the data it returns.
+
+FastAPI and Pydantic can reject malformed requests before they reach the main application logic.

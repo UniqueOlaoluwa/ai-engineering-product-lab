@@ -50,42 +50,50 @@ The current command-line application:
 - returns structured JSON responses
 - provides interactive API documentation
 - includes automated endpoint testing
+- exposes a POST /chat endpoint
+- accepts validated JSON requests
+- returns structured chatbot responses
+- supports configurable assistant roles through the API
+- rejects malformed or incomplete requests automatically
 
 
 ## Current Architecture
 
 ```text
-Browser, PowerShell, or External Client
+Browser, PowerShell, Website, or External Client
   ↓
 FastAPI Endpoint
   ↓
-Application Logic
-
-Command-Line User
+Pydantic Request Validation
   ↓
-Safe Application Startup
+Role Normalization
   ↓
-Command-Line Interface
+Prompt Builder
   ↓
-Role Normalization and Prompt Builder
+JSON Role Configuration
   ↓
-Cached JSON Configuration Loader
+Environment Settings
+  ↓
+Provider Factory
   ↓
 Provider Interface
   ↓
 Mock Model Provider
   ↓
-Assistant Response
+Pydantic Response Model
+  ↓
+Structured JSON Response
 ```
 
 The project currently separates:
 
 - FastAPI routes in `app/api.py`
+- request and response schemas in `app/schemas.py`
 - environment configuration in `.env`
 - public configuration examples in `.env.example`
 - settings loading in `app/config.py`
 - provider creation in `app/providers/factory.py`
-- command-line startup and interaction in `app/main.py`
+- command-line interaction in `app/main.py`
 - prompt-building logic in `app/prompt_builder.py`
 - custom application errors in `app/exceptions.py`
 - JSON loading and validation in `app/templates.py`
@@ -183,6 +191,43 @@ The current health response is:
   "version": "0.2.0"
 }
 ```
+## Chat API
+
+Send a chatbot request to:
+
+```text
+POST http://127.0.0.1:8000/chat
+```
+
+Example request:
+
+```json
+{
+  "message": "Help me reduce repetitive customer questions.",
+  "role": "business"
+}
+```
+
+Example response structure:
+
+```json
+{
+  "role": "business",
+  "role_name": "Business Assistant",
+  "reply": "[Mock provider response] ...",
+  "provider": "MockLLMProvider"
+}
+```
+
+The supported roles are loaded from:
+
+```text
+data/prompt_templates.json
+```
+
+When no role is supplied, the API uses the configured default role.
+
+Malformed requests are rejected with validation responses before the main chatbot logic runs.
 
 ## Product Roadmap
 
