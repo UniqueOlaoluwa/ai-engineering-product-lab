@@ -231,3 +231,39 @@ Existing terminal environment variables can override values loaded from a .env f
 Manual testing confirms that a user flow works today.
 
 Automated tests preserve expected behaviour and warn me when a future change breaks something that previously worked.
+
+---
+
+## Day 8 — First FastAPI Backend
+
+### What I built
+
+- Installed FastAPI and its development server
+- Created a FastAPI application
+- Added a GET /health endpoint
+- Returned structured JSON from Python
+- Started a local development server
+- Tested the API from a browser
+- Used FastAPI interactive documentation
+- Called the API from PowerShell
+- Added an automated API test with TestClient
+
+### Concepts practised
+
+- APIs
+- HTTP requests
+- HTTP GET methods
+- Endpoints
+- Local web servers
+- Ports
+- JSON responses
+- HTTP status codes
+- FastAPI route decorators
+- Interactive API documentation
+- Automated endpoint testing
+
+### Key lesson
+
+An API gives other systems a structured way to communicate with my application.
+
+The command-line interface is useful for local interaction, while the FastAPI backend can later receive requests from WhatsApp, websites, mobile applications, and business systems.

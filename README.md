@@ -45,16 +45,23 @@ The current command-line application:
 - handles unsupported provider configuration safely
 - includes automated tests for prompts, configuration, and provider behaviour
 - verifies expected failures such as empty input, provider timeouts, and invalid requests
+- includes a FastAPI backend
+- exposes a health-check endpoint
+- returns structured JSON responses
+- provides interactive API documentation
+- includes automated endpoint testing
 
 
 ## Current Architecture
 
 ```text
-Private Environment Configuration
+Browser, PowerShell, or External Client
   ↓
-Settings Loader
+FastAPI Endpoint
   ↓
-Provider Factory
+Application Logic
+
+Command-Line User
   ↓
 Safe Application Startup
   ↓
@@ -73,40 +80,19 @@ Assistant Response
 
 The project currently separates:
 
+- FastAPI routes in `app/api.py`
 - environment configuration in `.env`
 - public configuration examples in `.env.example`
 - settings loading in `app/config.py`
 - provider creation in `app/providers/factory.py`
-- safe startup and interaction flow in `app/main.py`
+- command-line startup and interaction in `app/main.py`
 - prompt-building logic in `app/prompt_builder.py`
 - custom application errors in `app/exceptions.py`
 - JSON loading and validation in `app/templates.py`
 - provider interface in `app/providers/base.py`
 - mock-provider behaviour in `app/providers/mock.py`
 - assistant-role configuration in `data/prompt_templates.json`
-```
-
-The project currently separates:
-
-- environment configuration in `.env`
-- public configuration examples in `.env.example`
-- settings loading in `app/config.py`
-- provider creation in `app/providers/factory.py`
-- safe startup and interaction flow in `app/main.py`
-- prompt-building logic in `app/prompt_builder.py`
-- custom application errors in `app/exceptions.py`
-- JSON loading and validation in `app/templates.py`
-- provider interface in `app/providers/base.py`
-- mock-provider behaviour in `app/providers/mock.py`
-- assistant-role configuration in `data/prompt_templates.json`
-```
-
-The project currently separates:
-
-- user-interface logic in `app/main.py`
-- prompt-building logic in `app/prompt_builder.py`
-- JSON loading and validation in `app/templates.py`
-- assistant configuration in `data/prompt_templates.json`
+- automated tests in `tests/`
 
 ## Run Locally
 
@@ -167,6 +153,36 @@ The tests currently cover:
 - empty-input validation
 - mock-provider responses
 - provider timeout and request failures
+
+## Run the API
+
+Start the local FastAPI development server:
+
+```powershell
+fastapi dev app\api.py
+```
+
+Open the health endpoint:
+
+```text
+http://127.0.0.1:8000/health
+```
+
+Open the interactive API documentation:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+The current health response is:
+
+```json
+{
+  "status": "ok",
+  "application": "AI Engineering Product Lab",
+  "version": "0.2.0"
+}
+```
 
 ## Product Roadmap
 
