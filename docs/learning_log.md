@@ -406,3 +406,35 @@ An empty database result can therefore become a `404 Not Found` response at the 
 Logs become much easier to investigate when every request has a traceable identifier.
 
 Even values used only for logging should be treated as untrusted input and validated before use.
+
+---
+
+## Day 13 — Consistent API Error Responses
+
+### What I built
+
+- Added a standard API error-response model
+- Added centralized HTTP exception handling
+- Added centralized request-validation error handling
+- Included request IDs in error response bodies and headers
+- Logged controlled HTTP and validation errors
+- Preserved safe client-supplied request IDs
+- Replaced unsafe request IDs before returning error responses
+- Added tests for 404 and 422 error responses
+
+### Concepts practised
+
+- FastAPI exception handlers
+- HTTPException handling
+- RequestValidationError handling
+- Standard API error contracts
+- Request-ID correlation
+- Structured warning logs
+- HTTP 404 and 422 responses
+- Integration testing for errors
+
+### Key lesson
+
+A production API should return predictable error responses.
+
+Using the same structure for controlled errors and validation failures makes client integration and debugging easier.

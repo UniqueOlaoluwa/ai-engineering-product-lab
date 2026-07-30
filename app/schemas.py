@@ -59,10 +59,16 @@ class StoredMessage(BaseModel):
     provider: str
     created_at: datetime
 
-
 class ConversationResponse(BaseModel):
     """Define the stored conversation returned by the API."""
 
     session_id: str
     message_count: int
     messages: list[StoredMessage]
+
+class ErrorResponse(BaseModel):
+    """Define the standard API error response."""
+
+    error: str
+    status_code: int
+    request_id: str

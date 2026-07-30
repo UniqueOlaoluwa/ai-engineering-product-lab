@@ -1,12 +1,17 @@
 """FastAPI application for the AI Engineering Product Lab."""
 
 from fastapi import FastAPI, HTTPException, status
+from fastapi.exceptions import RequestValidationError
 
 from app.config import load_settings
 from app.database import (
     get_messages_by_session,
     initialize_database,
     save_message,
+)
+from app.error_handlers import (
+    http_exception_handler,
+    validation_exception_handler,
 )
 from app.exceptions import PromptTemplateError, ProviderError
 from app.middleware import request_logging_middleware
@@ -32,6 +37,16 @@ app = FastAPI(
 )
 
 app.middleware("http")(request_logging_middleware)
+
+app.add_exception_handler(
+    HTTPException,
+    http_exception_handler,
+)
+
+app.add_exception_handler(
+    RequestValidationError,
+    validation_exception_handler,
+)
 
 initialize_database()
 

@@ -67,6 +67,9 @@ The current command-line application:
 - returns request IDs through the `X-Request-ID` response header
 - records structured request-completion logs
 - validates client-supplied request IDs before logging
+- returns consistent structured API error responses
+- includes request IDs in error bodies and headers
+- handles both HTTP errors and request-validation failures centrally
 
 ## Current Architecture
 
@@ -89,6 +92,12 @@ FastAPI Route Layer
   ├── GET /health
   ├── POST /chat
   └── GET /conversations/{session_id}
+  │
+  ▼
+  Centralized Error Handlers
+  ├── HTTP exceptions
+  ├── request-validation errors
+  └── structured errors with request IDs
   │
   ▼
 Pydantic Validation Layer
@@ -497,6 +506,45 @@ request_completed request_id=client-request-123 method=GET path=/health status_c
 ```
 
 This allows one API request to be traced across client responses and server logs.
+
+## Error Responses
+
+The API returns a consistent error structure for controlled HTTP errors.
+
+Example:
+
+```json
+{
+  "error": "Conversation session not found.",
+  "status_code": 404,
+  "request_id": "client-request-123"
+}
+```
+
+Request-validation errors also use the standard structure:
+
+```json
+{
+  "error": "Request validation failed.",
+  "status_code": 422,
+  "request_id": "client-request-123",
+  "details": [
+    {
+      "type": "string_too_short",
+      "loc": ["body", "message"],
+      "msg": "String should have at least 1 character"
+    }
+  ]
+}
+```
+
+The same request ID is returned in the response header:
+
+```text
+X-Request-ID: client-request-123
+```
+
+This allows clients to report one identifier that can be matched with server logs.
 
 ## Product Roadmap
 

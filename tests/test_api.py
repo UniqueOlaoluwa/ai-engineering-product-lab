@@ -167,12 +167,20 @@ def test_get_conversation_returns_saved_messages() -> None:
 
 
 def test_get_conversation_returns_404_for_unknown_session() -> None:
-    """An unknown session should return a not-found response."""
+    """An unknown session should return a structured not-found response."""
+    request_id = "unknown-conversation-test"
+
     response = client.get(
-        "/conversations/session-that-does-not-exist-987654"
+        "/conversations/session-that-does-not-exist-987654",
+        headers={
+            "X-Request-ID": request_id,
+        },
     )
 
     assert response.status_code == 404
     assert response.json() == {
-        "detail": "Conversation session not found."
+        "error": "Conversation session not found.",
+        "status_code": 404,
+        "request_id": request_id,
     }
+    assert response.headers["X-Request-ID"] == request_id
