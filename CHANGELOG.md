@@ -2,6 +2,31 @@
 
 All notable changes to the AI Engineering Product Lab are documented here.
 
+## [0.9.0] — 2026-07-30
+
+### Added
+
+- Conversation deletion database function
+- `DELETE /conversations/{session_id}` endpoint
+- Conversation-deletion response model
+- Deleted-message count reporting
+- Database tests for session deletion
+- API integration tests for deletion behaviour
+
+### Changed
+
+- Updated the API version to `0.9.0`
+- Expanded the Conversations API group
+- Updated database documentation to include data removal
+- Improved data lifecycle support
+
+### Validation and Safety
+
+- Blank session IDs are rejected by the database layer
+- Unknown sessions return a structured `404`
+- Deleting one session does not affect another session
+- SQL deletion uses a parameterized query
+
 ## [0.8.0] — 2026-07-30
 
 ### Added

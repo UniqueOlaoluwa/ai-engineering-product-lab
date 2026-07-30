@@ -6,6 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from app.config import load_settings
 from app.conversation_context import build_contextual_message
 from app.database import (
+    delete_messages_by_session,
     get_messages_by_session,
     initialize_database,
     save_message,
@@ -21,13 +22,14 @@ from app.providers.factory import create_provider
 from app.schemas import (
     ChatRequest,
     ChatResponse,
+    ConversationDeletionResponse,
     ConversationResponse,
     HealthResponse,
     RootResponse,
     StoredMessage,
 )
 
-API_VERSION = "0.8.0"
+API_VERSION = "0.9.0"
 APPLICATION_NAME = "AI Engineering Product Lab"
 
 app = FastAPI(
@@ -199,6 +201,42 @@ def get_conversation(session_id: str) -> ConversationResponse:
             session_id=session_id,
             message_count=len(stored_messages),
             messages=stored_messages,
+        )
+
+    except HTTPException:
+        raise
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
+
+
+@app.delete(
+    "/conversations/{session_id}",
+    response_model=ConversationDeletionResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Conversations"],
+    summary="Delete a stored conversation",
+)
+def delete_conversation(
+    session_id: str,
+) -> ConversationDeletionResponse:
+    """Delete all stored exchanges belonging to a session."""
+    try:
+        deleted_count = delete_messages_by_session(session_id)
+
+        if deleted_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation session not found.",
+            )
+
+        return ConversationDeletionResponse(
+            session_id=session_id,
+            deleted_count=deleted_count,
+            message="Conversation deleted successfully.",
         )
 
     except HTTPException:

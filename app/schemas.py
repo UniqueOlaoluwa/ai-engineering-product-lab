@@ -91,6 +91,14 @@ class ConversationResponse(BaseModel):
     messages: list[StoredMessage]
 
 
+class ConversationDeletionResponse(BaseModel):
+    """Define the response returned after deleting a conversation."""
+
+    session_id: str
+    deleted_count: int
+    message: str
+
+
 class ErrorResponse(BaseModel):
     """Define the standard API error response."""
 

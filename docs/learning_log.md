@@ -539,3 +539,35 @@ A conversation-aware assistant must retrieve relevant previous exchanges, format
 Conversation memory and conversation storage are different features.
 
 A request can disable the use of previous messages while still saving the new exchange for future retrieval.
+
+---
+
+## Day 17 — Conversation Deletion and Data Lifecycle
+
+### What I built
+
+- Added database support for deleting all messages in a session
+- Added `DELETE /conversations/{session_id}`
+- Returned the number of deleted messages
+- Returned a structured `404` response for unknown sessions
+- Confirmed that deleting one session does not affect another
+- Added database and API tests for deletion
+- Verified that deleted conversations can no longer be retrieved
+- Updated the application version to `0.9.0`
+
+### Concepts practised
+
+- SQL DELETE statements
+- Data lifecycle management
+- RESTful deletion endpoints
+- Session isolation
+- Deletion-count reporting
+- Structured 404 errors
+- Database testing
+- API integration testing
+
+### Key lesson
+
+Applications that store user data should also provide a controlled way to remove it.
+
+Deleting one conversation must remove only that session’s records and must not affect unrelated sessions.

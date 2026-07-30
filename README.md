@@ -82,6 +82,10 @@ The current command-line application:
 - supports disabling memory for individual chat requests
 - validates memory limits between zero and twenty exchanges
 - exposes memory constraints through OpenAPI documentation
+- deletes stored conversations by session ID
+- reports how many messages were removed
+- returns a structured 404 when a conversation does not exist
+- preserves unrelated sessions during deletion
 
 ## API Discovery
 
@@ -180,6 +184,57 @@ Setting `history_limit` to `0` does not delete conversation history and does not
 Conversation history remains isolated by session ID. A request cannot inherit context from another session.
 
 Only the original user message is stored in SQLite. The formatted prompt context is not stored as the new user message.
+
+## Conversation Deletion
+
+A stored conversation can be deleted using:
+
+```text
+DELETE /conversations/{session_id}
+```
+
+Example:
+
+```text
+DELETE /conversations/business-demo-001
+```
+
+Successful response:
+
+```json
+{
+  "session_id": "business-demo-001",
+  "deleted_count": 2,
+  "message": "Conversation deleted successfully."
+}
+```
+
+After successful deletion, retrieving the same session returns:
+
+```text
+404 Not Found
+```
+
+Unknown sessions also return a structured error:
+
+```json
+{
+  "error": "Conversation session not found.",
+  "status_code": 404,
+  "request_id": "client-request-123"
+}
+```
+
+Deletion affects only messages matching the supplied session ID. Other conversations remain unchanged.
+
+The database layer uses a parameterized query:
+
+```sql
+DELETE FROM messages
+WHERE session_id = ?
+```
+
+This avoids unsafe SQL string construction.
 
 ## Current Architecture
 
@@ -313,13 +368,33 @@ Stored messages are converted into Pydantic models
 FastAPI returns structured conversation history
 ```
 
+### Request flow for conversation deletion
+
+```text
+Client sends DELETE /conversations/{session_id}
+  ↓
+Request middleware validates or generates a request ID
+  ↓
+FastAPI captures the session ID path parameter
+  ↓
+Database layer runs a parameterized DELETE query
+  ↓
+Deleted row count is returned
+  ↓
+If deleted count is zero, API returns structured 404
+  ↓
+If messages were deleted, API returns session ID and deleted count
+  ↓
+Response includes X-Request-ID
+```
+
 ### Main application files
 
 - `app/api.py` — FastAPI application, routes, HTTP errors, and middleware registration
 - `app/schemas.py` — request and response validation models
 - `app/middleware.py` — request IDs, tracing, and request-completion logging
 - `app/logging_config.py` — centralized application logger configuration
-- `app/database.py` — SQLite connection, table creation, saving, and retrieval
+- `app/database.py` — SQLite connection, table creation, saving, retrieval and conversation deletion
 - `app/config.py` — environment-variable and application-settings loading
 - `app/prompt_builder.py` — role normalization and prompt construction
 - `app/templates.py` — JSON role-template loading and validation
@@ -347,6 +422,7 @@ FastAPI returns structured conversation history
 | `GET` | `/health` | System | Reports whether the API is running |
 | `POST` | `/chat` | Chat | Generates and saves a role-specific response |
 | `GET` | `/conversations/{session_id}` | Conversations | Retrieves saved conversation history |
+| `DELETE` | `/conversations/{session_id}` | Conversations | Deletes all messages in a conversation |
 
 ### Current storage
 

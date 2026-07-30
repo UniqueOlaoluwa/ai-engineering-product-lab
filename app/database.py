@@ -98,7 +98,9 @@ def save_message(
     return int(message_id)
 
 
-def get_messages_by_session(session_id: str) -> list[dict[str, Any]]:
+def get_messages_by_session(
+    session_id: str,
+) -> list[dict[str, Any]]:
     """Return all saved messages for a session."""
     cleaned_session_id = session_id.strip()
 
@@ -124,3 +126,25 @@ def get_messages_by_session(session_id: str) -> list[dict[str, Any]]:
         ).fetchall()
 
     return [dict(row) for row in rows]
+
+
+def delete_messages_by_session(session_id: str) -> int:
+    """Delete all messages for a session and return the deleted count."""
+    cleaned_session_id = session_id.strip()
+
+    if not cleaned_session_id:
+        raise ValueError("Session ID cannot be empty.")
+
+    with closing(get_connection()) as connection:
+        cursor = connection.execute(
+            """
+            DELETE FROM messages
+            WHERE session_id = ?
+            """,
+            (cleaned_session_id,),
+        )
+
+        connection.commit()
+        deleted_count = cursor.rowcount
+
+    return max(deleted_count, 0)

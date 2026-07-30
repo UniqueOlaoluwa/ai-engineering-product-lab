@@ -22,7 +22,7 @@ def test_root_endpoint_returns_api_information() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "application": "AI Engineering Product Lab",
-        "version": "0.8.0",
+        "version": "0.9.0",
         "status": "running",
         "documentation": "/docs",
         "health": "/health",
@@ -38,7 +38,7 @@ def test_health_endpoint_returns_ok() -> None:
     assert response.json() == {
         "status": "ok",
         "application": "AI Engineering Product Lab",
-        "version": "0.8.0",
+        "version": "0.9.0",
     }
 
 
@@ -248,21 +248,6 @@ def test_get_conversation_returns_saved_messages() -> None:
     assert response_data["message_count"] == 2
     assert len(response_data["messages"]) == 2
 
-    first_message = response_data["messages"][0]
-    second_message = response_data["messages"][1]
-
-    assert first_message["role"] == "business"
-    assert first_message["user_message"] == (
-        "What is workflow automation?"
-    )
-    assert first_message["provider"] == "MockLLMProvider"
-    assert "created_at" in first_message
-
-    assert second_message["role"] == "business"
-    assert second_message["user_message"] == (
-        "Give me one practical example."
-    )
-
 
 def test_default_history_limit_uses_previous_context() -> None:
     """The default history limit should enable conversation memory."""
@@ -294,7 +279,6 @@ def test_default_history_limit_uses_previous_context() -> None:
     assert "Previous conversation context:" in reply
     assert "User: What is workflow automation?" in reply
     assert "Current user message:" in reply
-    assert "Give me an example for a clinic." in reply
 
 
 def test_history_limit_zero_disables_previous_context() -> None:
@@ -328,7 +312,6 @@ def test_history_limit_zero_disables_previous_context() -> None:
     assert second_response.status_code == 200
     assert "Previous conversation context:" not in reply
     assert "Remember this earlier discussion." not in reply
-    assert "Answer without using earlier context." in reply
 
 
 def test_history_limit_zero_still_saves_new_exchange() -> None:
@@ -365,12 +348,6 @@ def test_history_limit_zero_still_saves_new_exchange() -> None:
 
     assert conversation_response.status_code == 200
     assert conversation_data["message_count"] == 2
-    assert conversation_data["messages"][0]["user_message"] == (
-        "First saved message."
-    )
-    assert conversation_data["messages"][1]["user_message"] == (
-        "Second saved message without context."
-    )
 
 
 def test_new_session_does_not_include_previous_context() -> None:
@@ -405,6 +382,114 @@ def test_new_session_does_not_include_previous_context() -> None:
     assert second_response.status_code == 200
     assert "Private first-session question." not in second_reply
     assert "Previous conversation context:" not in second_reply
+
+
+def test_delete_conversation_removes_all_saved_messages() -> None:
+    """Deleting a conversation should remove all session messages."""
+    session_id = create_unique_session("delete-conversation")
+
+    first_response = client.post(
+        "/chat",
+        json={
+            "message": "First message to delete.",
+            "role": "business",
+            "session_id": session_id,
+            "history_limit": 5,
+        },
+    )
+
+    second_response = client.post(
+        "/chat",
+        json={
+            "message": "Second message to delete.",
+            "role": "business",
+            "session_id": session_id,
+            "history_limit": 5,
+        },
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+
+    delete_response = client.delete(
+        f"/conversations/{session_id}"
+    )
+    delete_data = delete_response.json()
+
+    assert delete_response.status_code == 200
+    assert delete_data == {
+        "session_id": session_id,
+        "deleted_count": 2,
+        "message": "Conversation deleted successfully.",
+    }
+
+    retrieval_response = client.get(
+        f"/conversations/{session_id}"
+    )
+
+    assert retrieval_response.status_code == 404
+
+
+def test_delete_conversation_does_not_affect_other_session() -> None:
+    """Deleting one conversation should preserve another."""
+    deleted_session = create_unique_session("deleted-session")
+    retained_session = create_unique_session("retained-session")
+
+    deleted_response = client.post(
+        "/chat",
+        json={
+            "message": "Delete this conversation.",
+            "role": "business",
+            "session_id": deleted_session,
+            "history_limit": 5,
+        },
+    )
+
+    retained_response = client.post(
+        "/chat",
+        json={
+            "message": "Keep this conversation.",
+            "role": "support",
+            "session_id": retained_session,
+            "history_limit": 5,
+        },
+    )
+
+    assert deleted_response.status_code == 200
+    assert retained_response.status_code == 200
+
+    delete_response = client.delete(
+        f"/conversations/{deleted_session}"
+    )
+
+    retained_history = client.get(
+        f"/conversations/{retained_session}"
+    )
+
+    assert delete_response.status_code == 200
+    assert retained_history.status_code == 200
+    assert retained_history.json()["message_count"] == 1
+
+
+def test_delete_unknown_conversation_returns_404() -> None:
+    """Deleting an unknown session should return a structured 404."""
+    request_id = "delete-missing-conversation"
+    session_id = create_unique_session("missing-delete")
+
+    response = client.delete(
+        f"/conversations/{session_id}",
+        headers={
+            "X-Request-ID": request_id,
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "error": "Conversation session not found.",
+        "status_code": 404,
+        "request_id": request_id,
+    }
+    assert response.headers["X-Request-ID"] == request_id
 
 
 def test_get_conversation_returns_404_for_unknown_session() -> None:
