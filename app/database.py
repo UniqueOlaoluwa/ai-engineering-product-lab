@@ -9,6 +9,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATABASE_DIR = PROJECT_ROOT / "storage"
 DATABASE_PATH = DATABASE_DIR / "conversations.db"
 
+DEFAULT_CONVERSATION_LIMIT = 20
+MAX_CONVERSATION_LIMIT = 100
+
 
 def get_connection() -> sqlite3.Connection:
     """Create and return a configured SQLite connection."""
@@ -36,6 +39,21 @@ def initialize_database() -> None:
             )
             """
         )
+
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_messages_session_id
+            ON messages (session_id)
+            """
+        )
+
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_messages_created_at
+            ON messages (created_at)
+            """
+        )
+
         connection.commit()
 
 
@@ -148,3 +166,64 @@ def delete_messages_by_session(session_id: str) -> int:
         deleted_count = cursor.rowcount
 
     return max(deleted_count, 0)
+
+
+def validate_conversation_pagination(
+    limit: int,
+    offset: int,
+) -> None:
+    """Validate pagination values used when listing conversations."""
+    if limit < 1:
+        raise ValueError("Conversation limit must be at least 1.")
+
+    if limit > MAX_CONVERSATION_LIMIT:
+        raise ValueError(
+            "Conversation limit cannot exceed "
+            f"{MAX_CONVERSATION_LIMIT}."
+        )
+
+    if offset < 0:
+        raise ValueError("Conversation offset cannot be negative.")
+
+
+def count_conversation_sessions() -> int:
+    """Return the number of distinct stored conversation sessions."""
+    with closing(get_connection()) as connection:
+        row = connection.execute(
+            """
+            SELECT COUNT(DISTINCT session_id) AS total
+            FROM messages
+            """
+        ).fetchone()
+
+    if row is None:
+        return 0
+
+    return int(row["total"])
+
+
+def list_conversation_sessions(
+    limit: int = DEFAULT_CONVERSATION_LIMIT,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    """Return paginated conversation summaries by recent activity."""
+    validate_conversation_pagination(limit, offset)
+
+    with closing(get_connection()) as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                session_id,
+                COUNT(*) AS message_count,
+                MIN(created_at) AS first_created_at,
+                MAX(created_at) AS last_created_at
+            FROM messages
+            GROUP BY session_id
+            ORDER BY last_created_at DESC, MAX(id) DESC
+            LIMIT ?
+            OFFSET ?
+            """,
+            (limit, offset),
+        ).fetchall()
+
+    return [dict(row) for row in rows]

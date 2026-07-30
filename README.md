@@ -86,6 +86,11 @@ The current command-line application:
 - reports how many messages were removed
 - returns a structured 404 when a conversation does not exist
 - preserves unrelated sessions during deletion
+- lists stored conversation sessions
+- returns one summary per conversation
+- supports pagination using limit and offset
+- orders conversations by recent activity
+- uses database indexes for session and date lookups
 
 ## API Discovery
 
@@ -236,6 +241,66 @@ WHERE session_id = ?
 
 This avoids unsafe SQL string construction.
 
+## Conversation Listing
+
+Stored conversation sessions can be listed using:
+
+```text
+GET /conversations
+```
+
+The endpoint accepts two query parameters:
+
+| Parameter | Default | Allowed values | Purpose |
+|---|---:|---:|---|
+| `limit` | `20` | `1–100` | Maximum number of conversations returned |
+| `offset` | `0` | `0` or greater | Number of conversation summaries skipped |
+
+Example:
+
+```text
+GET /conversations?limit=20&offset=0
+```
+
+Example response:
+
+```json
+{
+  "total": 3,
+  "limit": 20,
+  "offset": 0,
+  "conversations": [
+    {
+      "session_id": "clinic-demo-001",
+      "message_count": 4,
+      "first_created_at": "2026-07-30T12:00:00",
+      "last_created_at": "2026-07-30T12:15:00"
+    }
+  ]
+}
+```
+
+Each summary contains:
+
+- session ID
+- number of stored exchanges
+- first activity time
+- latest activity time
+
+Conversation summaries are ordered by most recent activity.
+
+Invalid pagination values return structured `422` validation errors.
+
+Examples:
+
+```text
+limit=0
+limit=101
+offset=-1
+```
+
+The database uses indexes on `session_id` and `created_at` to improve lookup performance as stored data grows.
+
 ## Current Architecture
 
 ```text
@@ -349,6 +414,33 @@ Pydantic validates the response
   ↓
 FastAPI returns JSON with an X-Request-ID header
 ```
+### Request flow for conversation listing
+
+```text
+Client sends GET /conversations with limit and offset
+  ↓
+Request middleware validates or generates a request ID
+  ↓
+FastAPI validates pagination query parameters
+  ↓
+Database counts distinct conversation sessions
+  ↓
+Database groups messages by session ID
+  ↓
+COUNT calculates the number of exchanges
+  ↓
+MIN finds the first activity time
+  ↓
+MAX finds the latest activity time
+  ↓
+Results are ordered by recent activity
+  ↓
+Limit and offset are applied
+  ↓
+Pydantic validates conversation summaries
+  ↓
+FastAPI returns paginated JSON with X-Request-ID
+```
 
 ### Request flow for conversation retrieval
 
@@ -394,7 +486,7 @@ Response includes X-Request-ID
 - `app/schemas.py` — request and response validation models
 - `app/middleware.py` — request IDs, tracing, and request-completion logging
 - `app/logging_config.py` — centralized application logger configuration
-- `app/database.py` — SQLite connection, table creation, saving, retrieval and conversation deletion
+- `app/database.py` — SQLite connection, indexes, saving, retrieval, deletion, session counting, and paginated conversation listing
 - `app/config.py` — environment-variable and application-settings loading
 - `app/prompt_builder.py` — role normalization and prompt construction
 - `app/templates.py` — JSON role-template loading and validation
@@ -413,6 +505,7 @@ Response includes X-Request-ID
 ```markdown
 - `app/conversation_context.py` — recent-message selection and multi-turn prompt context
 - `tests/test_conversation_context.py` — conversation-context unit tests
+- `tests/test_conversation_listing.py` — database tests for grouped conversation summaries and pagination
 
 ### Current API endpoints
 
@@ -421,6 +514,7 @@ Response includes X-Request-ID
 | `GET` | `/` | System | Returns API information and useful paths |
 | `GET` | `/health` | System | Reports whether the API is running |
 | `POST` | `/chat` | Chat | Generates and saves a role-specific response |
+| `GET` | `/conversations` | Conversations | Lists paginated conversation summaries |
 | `GET` | `/conversations/{session_id}` | Conversations | Retrieves saved conversation history |
 | `DELETE` | `/conversations/{session_id}` | Conversations | Deletes all messages in a conversation |
 

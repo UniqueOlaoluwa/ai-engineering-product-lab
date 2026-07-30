@@ -571,3 +571,37 @@ A request can disable the use of previous messages while still saving the new ex
 Applications that store user data should also provide a controlled way to remove it.
 
 Deleting one conversation must remove only that session’s records and must not affect unrelated sessions.
+
+---
+
+## Day 18 — Conversation Listing and Pagination
+
+### What I built
+
+- Added database indexes for session IDs and creation times
+- Added distinct conversation-session counting
+- Added grouped conversation summaries
+- Added pagination using `limit` and `offset`
+- Added `GET /conversations`
+- Ordered conversation summaries by recent activity
+- Added validation for pagination boundaries
+- Added database and API tests for listing behaviour
+- Updated the application version to `0.10.0`
+
+### Concepts practised
+
+- SQL grouping
+- SQL aggregate functions
+- `COUNT`, `MIN`, and `MAX`
+- Database indexes
+- Pagination
+- Query parameters
+- Boundary validation
+- Conversation summaries
+- API integration testing
+
+### Key lesson
+
+A conversation dashboard should retrieve summaries instead of loading every message from every session.
+
+Pagination and database indexes help keep listing operations controlled as stored data grows.

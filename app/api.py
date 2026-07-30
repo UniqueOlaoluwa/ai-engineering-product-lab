@@ -1,14 +1,18 @@
 """FastAPI application for the AI Engineering Product Lab."""
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Query, status
 from fastapi.exceptions import RequestValidationError
 
 from app.config import load_settings
 from app.conversation_context import build_contextual_message
 from app.database import (
+    DEFAULT_CONVERSATION_LIMIT,
+    MAX_CONVERSATION_LIMIT,
+    count_conversation_sessions,
     delete_messages_by_session,
     get_messages_by_session,
     initialize_database,
+    list_conversation_sessions,
     save_message,
 )
 from app.error_handlers import (
@@ -23,13 +27,15 @@ from app.schemas import (
     ChatRequest,
     ChatResponse,
     ConversationDeletionResponse,
+    ConversationListResponse,
     ConversationResponse,
+    ConversationSummary,
     HealthResponse,
     RootResponse,
     StoredMessage,
 )
 
-API_VERSION = "0.9.0"
+API_VERSION = "0.10.0"
 APPLICATION_NAME = "AI Engineering Product Lab"
 
 app = FastAPI(
@@ -159,6 +165,59 @@ def chat(request: ChatRequest) -> ChatResponse:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"AI provider error: {error}",
         ) from error
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
+
+
+@app.get(
+    "/conversations",
+    response_model=ConversationListResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Conversations"],
+    summary="List stored conversations",
+)
+def list_conversations(
+    limit: int = Query(
+        default=DEFAULT_CONVERSATION_LIMIT,
+        ge=1,
+        le=MAX_CONVERSATION_LIMIT,
+        description="Maximum number of conversations to return.",
+    ),
+    offset: int = Query(
+        default=0,
+        ge=0,
+        description="Number of conversation summaries to skip.",
+    ),
+) -> ConversationListResponse:
+    """Return paginated conversation summaries."""
+    try:
+        total = count_conversation_sessions()
+
+        conversations = list_conversation_sessions(
+            limit=limit,
+            offset=offset,
+        )
+
+        summaries = [
+            ConversationSummary(
+                session_id=conversation["session_id"],
+                message_count=conversation["message_count"],
+                first_created_at=conversation["first_created_at"],
+                last_created_at=conversation["last_created_at"],
+            )
+            for conversation in conversations
+        ]
+
+        return ConversationListResponse(
+            total=total,
+            limit=limit,
+            offset=offset,
+            conversations=summaries,
+        )
 
     except ValueError as error:
         raise HTTPException(

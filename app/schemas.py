@@ -99,6 +99,24 @@ class ConversationDeletionResponse(BaseModel):
     message: str
 
 
+class ConversationSummary(BaseModel):
+    """Represent one conversation in a paginated listing."""
+
+    session_id: str
+    message_count: int
+    first_created_at: datetime
+    last_created_at: datetime
+
+
+class ConversationListResponse(BaseModel):
+    """Define a paginated list of conversation summaries."""
+
+    total: int
+    limit: int
+    offset: int
+    conversations: list[ConversationSummary]
+
+
 class ErrorResponse(BaseModel):
     """Define the standard API error response."""
 

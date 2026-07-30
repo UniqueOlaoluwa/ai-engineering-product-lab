@@ -15,6 +15,24 @@ def create_unique_session(prefix: str) -> str:
     return f"{prefix}-{uuid4()}"
 
 
+def create_chat_message(
+    session_id: str,
+    message: str,
+    role: str = "business",
+    history_limit: int = 5,
+):
+    """Create one stored chat exchange through the API."""
+    return client.post(
+        "/chat",
+        json={
+            "message": message,
+            "role": role,
+            "session_id": session_id,
+            "history_limit": history_limit,
+        },
+    )
+
+
 def test_root_endpoint_returns_api_information() -> None:
     """The root endpoint should describe the running API."""
     response = client.get("/")
@@ -22,7 +40,7 @@ def test_root_endpoint_returns_api_information() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "application": "AI Engineering Product Lab",
-        "version": "0.9.0",
+        "version": "0.10.0",
         "status": "running",
         "documentation": "/docs",
         "health": "/health",
@@ -38,7 +56,7 @@ def test_health_endpoint_returns_ok() -> None:
     assert response.json() == {
         "status": "ok",
         "application": "AI Engineering Product Lab",
-        "version": "0.9.0",
+        "version": "0.10.0",
     }
 
 
@@ -46,14 +64,9 @@ def test_chat_endpoint_returns_business_response() -> None:
     """A valid business request should return a stored response."""
     session_id = create_unique_session("api-business")
 
-    response = client.post(
-        "/chat",
-        json={
-            "message": "Help me improve customer support.",
-            "role": "business",
-            "session_id": session_id,
-            "history_limit": 5,
-        },
+    response = create_chat_message(
+        session_id=session_id,
+        message="Help me improve customer support.",
     )
 
     response_data = response.json()
@@ -90,14 +103,10 @@ def test_chat_endpoint_falls_back_for_unknown_role() -> None:
     """An unknown role should safely use the default role."""
     session_id = create_unique_session("fallback")
 
-    response = client.post(
-        "/chat",
-        json={
-            "message": "What time do you close?",
-            "role": "doctor",
-            "session_id": session_id,
-            "history_limit": 5,
-        },
+    response = create_chat_message(
+        session_id=session_id,
+        message="What time do you close?",
+        role="doctor",
     )
 
     response_data = response.json()
@@ -197,14 +206,10 @@ def test_chat_endpoint_accepts_maximum_history_limit() -> None:
     """The maximum allowed history limit should be accepted."""
     session_id = create_unique_session("maximum-limit")
 
-    response = client.post(
-        "/chat",
-        json={
-            "message": "Explain workflow automation.",
-            "role": "business",
-            "session_id": session_id,
-            "history_limit": 20,
-        },
+    response = create_chat_message(
+        session_id=session_id,
+        message="Explain workflow automation.",
+        history_limit=20,
     )
 
     assert response.status_code == 200
@@ -217,24 +222,14 @@ def test_get_conversation_returns_saved_messages() -> None:
 
     session_id = create_unique_session("conversation-history")
 
-    first_response = client.post(
-        "/chat",
-        json={
-            "message": "What is workflow automation?",
-            "role": "business",
-            "session_id": session_id,
-            "history_limit": 5,
-        },
+    first_response = create_chat_message(
+        session_id=session_id,
+        message="What is workflow automation?",
     )
 
-    second_response = client.post(
-        "/chat",
-        json={
-            "message": "Give me one practical example.",
-            "role": "business",
-            "session_id": session_id,
-            "history_limit": 5,
-        },
+    second_response = create_chat_message(
+        session_id=session_id,
+        message="Give me one practical example.",
     )
 
     assert first_response.status_code == 200
@@ -253,13 +248,9 @@ def test_default_history_limit_uses_previous_context() -> None:
     """The default history limit should enable conversation memory."""
     session_id = create_unique_session("default-memory")
 
-    first_response = client.post(
-        "/chat",
-        json={
-            "message": "What is workflow automation?",
-            "role": "business",
-            "session_id": session_id,
-        },
+    first_response = create_chat_message(
+        session_id=session_id,
+        message="What is workflow automation?",
     )
 
     assert first_response.status_code == 200
@@ -285,26 +276,17 @@ def test_history_limit_zero_disables_previous_context() -> None:
     """A zero history limit should disable memory for one request."""
     session_id = create_unique_session("disabled-memory")
 
-    first_response = client.post(
-        "/chat",
-        json={
-            "message": "Remember this earlier discussion.",
-            "role": "business",
-            "session_id": session_id,
-            "history_limit": 5,
-        },
+    first_response = create_chat_message(
+        session_id=session_id,
+        message="Remember this earlier discussion.",
     )
 
     assert first_response.status_code == 200
 
-    second_response = client.post(
-        "/chat",
-        json={
-            "message": "Answer without using earlier context.",
-            "role": "business",
-            "session_id": session_id,
-            "history_limit": 0,
-        },
+    second_response = create_chat_message(
+        session_id=session_id,
+        message="Answer without using earlier context.",
+        history_limit=0,
     )
 
     reply = second_response.json()["reply"]
@@ -318,24 +300,15 @@ def test_history_limit_zero_still_saves_new_exchange() -> None:
     """Disabling prompt memory should not disable message storage."""
     session_id = create_unique_session("disabled-memory-storage")
 
-    first_response = client.post(
-        "/chat",
-        json={
-            "message": "First saved message.",
-            "role": "business",
-            "session_id": session_id,
-            "history_limit": 5,
-        },
+    first_response = create_chat_message(
+        session_id=session_id,
+        message="First saved message.",
     )
 
-    second_response = client.post(
-        "/chat",
-        json={
-            "message": "Second saved message without context.",
-            "role": "business",
-            "session_id": session_id,
-            "history_limit": 0,
-        },
+    second_response = create_chat_message(
+        session_id=session_id,
+        message="Second saved message without context.",
+        history_limit=0,
     )
 
     assert first_response.status_code == 200
@@ -355,26 +328,16 @@ def test_new_session_does_not_include_previous_context() -> None:
     first_session = create_unique_session("isolated-first")
     second_session = create_unique_session("isolated-second")
 
-    first_response = client.post(
-        "/chat",
-        json={
-            "message": "Private first-session question.",
-            "role": "business",
-            "session_id": first_session,
-            "history_limit": 5,
-        },
+    first_response = create_chat_message(
+        session_id=first_session,
+        message="Private first-session question.",
     )
 
     assert first_response.status_code == 200
 
-    second_response = client.post(
-        "/chat",
-        json={
-            "message": "Start a separate conversation.",
-            "role": "business",
-            "session_id": second_session,
-            "history_limit": 5,
-        },
+    second_response = create_chat_message(
+        session_id=second_session,
+        message="Start a separate conversation.",
     )
 
     second_reply = second_response.json()["reply"]
@@ -384,28 +347,178 @@ def test_new_session_does_not_include_previous_context() -> None:
     assert "Previous conversation context:" not in second_reply
 
 
+def test_list_conversations_returns_session_summaries() -> None:
+    """The listing endpoint should return grouped conversation data."""
+    first_session = create_unique_session("list-first")
+    second_session = create_unique_session("list-second")
+
+    first_response = create_chat_message(
+        session_id=first_session,
+        message="First session, first message.",
+    )
+
+    second_response = create_chat_message(
+        session_id=first_session,
+        message="First session, second message.",
+    )
+
+    third_response = create_chat_message(
+        session_id=second_session,
+        message="Second session message.",
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert third_response.status_code == 200
+
+    response = client.get(
+        "/conversations",
+        params={
+            "limit": 100,
+            "offset": 0,
+        },
+    )
+
+    response_data = response.json()
+    summaries = {
+        item["session_id"]: item
+        for item in response_data["conversations"]
+    }
+
+    assert response.status_code == 200
+    assert response_data["total"] >= 2
+    assert response_data["limit"] == 100
+    assert response_data["offset"] == 0
+    assert first_session in summaries
+    assert second_session in summaries
+    assert summaries[first_session]["message_count"] == 2
+    assert summaries[second_session]["message_count"] == 1
+    assert "first_created_at" in summaries[first_session]
+    assert "last_created_at" in summaries[first_session]
+
+
+def test_list_conversations_respects_limit_and_offset() -> None:
+    """The listing endpoint should apply pagination parameters."""
+    for number in range(3):
+        session_id = create_unique_session(f"pagination-{number}")
+
+        response = create_chat_message(
+            session_id=session_id,
+            message=f"Pagination message {number}",
+        )
+
+        assert response.status_code == 200
+
+    first_page = client.get(
+        "/conversations",
+        params={
+            "limit": 2,
+            "offset": 0,
+        },
+    )
+
+    second_page = client.get(
+        "/conversations",
+        params={
+            "limit": 2,
+            "offset": 2,
+        },
+    )
+
+    first_data = first_page.json()
+    second_data = second_page.json()
+
+    first_sessions = {
+        item["session_id"]
+        for item in first_data["conversations"]
+    }
+
+    second_sessions = {
+        item["session_id"]
+        for item in second_data["conversations"]
+    }
+
+    assert first_page.status_code == 200
+    assert second_page.status_code == 200
+    assert first_data["limit"] == 2
+    assert first_data["offset"] == 0
+    assert second_data["limit"] == 2
+    assert second_data["offset"] == 2
+    assert len(first_data["conversations"]) <= 2
+    assert len(second_data["conversations"]) <= 2
+    assert first_sessions.isdisjoint(second_sessions)
+
+
+def test_list_conversations_uses_default_pagination() -> None:
+    """Omitted query parameters should use the configured defaults."""
+    response = client.get("/conversations")
+    response_data = response.json()
+
+    assert response.status_code == 200
+    assert response_data["limit"] == 20
+    assert response_data["offset"] == 0
+    assert isinstance(response_data["total"], int)
+    assert isinstance(response_data["conversations"], list)
+
+
+def test_list_conversations_rejects_zero_limit() -> None:
+    """A zero page limit should return a validation error."""
+    response = client.get(
+        "/conversations",
+        params={
+            "limit": 0,
+            "offset": 0,
+        },
+    )
+
+    response_data = response.json()
+
+    assert response.status_code == 422
+    assert response_data["error"] == "Request validation failed."
+    assert response_data["status_code"] == 422
+    assert isinstance(response_data["details"], list)
+
+
+def test_list_conversations_rejects_limit_above_maximum() -> None:
+    """A limit above 100 should return a validation error."""
+    response = client.get(
+        "/conversations",
+        params={
+            "limit": 101,
+            "offset": 0,
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "Request validation failed."
+
+
+def test_list_conversations_rejects_negative_offset() -> None:
+    """A negative offset should return a validation error."""
+    response = client.get(
+        "/conversations",
+        params={
+            "limit": 20,
+            "offset": -1,
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "Request validation failed."
+
+
 def test_delete_conversation_removes_all_saved_messages() -> None:
     """Deleting a conversation should remove all session messages."""
     session_id = create_unique_session("delete-conversation")
 
-    first_response = client.post(
-        "/chat",
-        json={
-            "message": "First message to delete.",
-            "role": "business",
-            "session_id": session_id,
-            "history_limit": 5,
-        },
+    first_response = create_chat_message(
+        session_id=session_id,
+        message="First message to delete.",
     )
 
-    second_response = client.post(
-        "/chat",
-        json={
-            "message": "Second message to delete.",
-            "role": "business",
-            "session_id": session_id,
-            "history_limit": 5,
-        },
+    second_response = create_chat_message(
+        session_id=session_id,
+        message="Second message to delete.",
     )
 
     assert first_response.status_code == 200
@@ -435,24 +548,15 @@ def test_delete_conversation_does_not_affect_other_session() -> None:
     deleted_session = create_unique_session("deleted-session")
     retained_session = create_unique_session("retained-session")
 
-    deleted_response = client.post(
-        "/chat",
-        json={
-            "message": "Delete this conversation.",
-            "role": "business",
-            "session_id": deleted_session,
-            "history_limit": 5,
-        },
+    deleted_response = create_chat_message(
+        session_id=deleted_session,
+        message="Delete this conversation.",
     )
 
-    retained_response = client.post(
-        "/chat",
-        json={
-            "message": "Keep this conversation.",
-            "role": "support",
-            "session_id": retained_session,
-            "history_limit": 5,
-        },
+    retained_response = create_chat_message(
+        session_id=retained_session,
+        message="Keep this conversation.",
+        role="support",
     )
 
     assert deleted_response.status_code == 200

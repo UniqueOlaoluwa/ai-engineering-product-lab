@@ -2,6 +2,33 @@
 
 All notable changes to the AI Engineering Product Lab are documented here.
 
+## [0.10.0] — 2026-07-30
+
+### Added
+
+- `GET /conversations` endpoint
+- Paginated conversation-session listing
+- Conversation summary response models
+- Distinct session counting
+- Message-count aggregation per session
+- First and latest activity timestamps
+- Database indexes for session IDs and creation times
+- Database and API pagination tests
+
+### Changed
+
+- Updated the API version to `0.10.0`
+- Expanded the Conversations API group
+- Ordered conversation summaries by recent activity
+- Added reusable chat-test helper functions
+
+### Validation and Performance
+
+- Conversation limits must be between `1` and `100`
+- Pagination offsets cannot be negative
+- Invalid pagination values return structured `422` responses
+- Session and creation-time indexes support more efficient lookups
+
 ## [0.9.0] — 2026-07-30
 
 ### Added
