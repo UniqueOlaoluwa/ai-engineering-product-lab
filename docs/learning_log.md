@@ -506,3 +506,36 @@ Clear metadata, endpoint grouping, versioning, documentation, and automated test
 Saving conversations is not the same as using conversation memory.
 
 A conversation-aware assistant must retrieve relevant previous exchanges, format them safely, and include them in the next prompt without mixing sessions or storing duplicated context.
+
+---
+
+## Day 16 — Configurable Conversation Memory
+
+### What I built
+
+- Added a `history_limit` field to chat requests
+- Set a default history limit of five exchanges
+- Allowed memory to be disabled for individual requests
+- Limited the maximum history value to twenty exchanges
+- Added API validation for negative and excessive limits
+- Exposed the memory limits through OpenAPI documentation
+- Added tests for default, minimum, maximum, and invalid values
+- Confirmed that disabling prompt memory does not disable message storage
+- Updated the application version to `0.8.0`
+
+### Concepts practised
+
+- Per-request AI behaviour controls
+- Pydantic numeric constraints
+- Minimum and maximum validation
+- Boundary-value testing
+- OpenAPI schema generation
+- Prompt memory versus persistent storage
+- Configurable context windows
+- API integration testing
+
+### Key lesson
+
+Conversation memory and conversation storage are different features.
+
+A request can disable the use of previous messages while still saving the new exchange for future retrieval.

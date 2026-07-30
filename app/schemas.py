@@ -40,6 +40,17 @@ class ChatRequest(BaseModel):
         description="A client-generated conversation session identifier.",
         examples=["demo-session-001"],
     )
+    history_limit: int = Field(
+        default=5,
+        ge=0,
+        le=20,
+        description=(
+            "The maximum number of recent stored exchanges included "
+            "as conversation context. Use 0 to disable memory for "
+            "the current request."
+        ),
+        examples=[5],
+    )
 
 
 class ChatResponse(BaseModel):

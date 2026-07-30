@@ -27,7 +27,7 @@ from app.schemas import (
     StoredMessage,
 )
 
-API_VERSION = "0.7.0"
+API_VERSION = "0.8.0"
 APPLICATION_NAME = "AI Engineering Product Lab"
 
 app = FastAPI(
@@ -104,7 +104,7 @@ def health_check() -> HealthResponse:
     summary="Generate and store a conversation-aware response",
 )
 def chat(request: ChatRequest) -> ChatResponse:
-    """Generate a response using recent conversation history."""
+    """Generate a response using configurable conversation history."""
     try:
         settings = load_settings()
         provider = create_provider(settings)
@@ -118,6 +118,7 @@ def chat(request: ChatRequest) -> ChatResponse:
         contextual_message = build_contextual_message(
             current_message=request.message,
             previous_messages=previous_messages,
+            limit=request.history_limit,
         )
 
         prompt = build_prompt(

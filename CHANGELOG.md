@@ -2,6 +2,31 @@
 
 All notable changes to the AI Engineering Product Lab are documented here.
 
+## [0.8.0] — 2026-07-30
+
+### Added
+
+- Configurable `history_limit` field for chat requests
+- Per-request conversation-memory controls
+- Support for disabling memory with `history_limit: 0`
+- Validation for memory limits between zero and twenty
+- Boundary-value API tests
+- OpenAPI documentation for memory constraints
+
+### Changed
+
+- Updated the API version to `0.8.0`
+- Updated `/chat` to use the requested conversation-history limit
+- Expanded API integration tests for memory behaviour
+- Documented the difference between prompt memory and permanent storage
+
+### Validation
+
+- Negative memory limits return `422`
+- Limits above twenty return `422`
+- The maximum allowed value of twenty is accepted
+- Disabling memory still saves the new exchange
+
 ## [0.7.0] — 2026-07-30
 
 ### Added

@@ -78,6 +78,10 @@ The current command-line application:
 - isolates conversation memory by session ID
 - limits prompt context to the five most recent exchanges
 - prevents formatted prompt context from being duplicated in storage
+- allows clients to configure conversation-memory depth
+- supports disabling memory for individual chat requests
+- validates memory limits between zero and twenty exchanges
+- exposes memory constraints through OpenAPI documentation
 
 ## API Discovery
 
@@ -113,7 +117,7 @@ The endpoints are grouped into:
 
 ## Conversation-Aware Memory
 
-The `/chat` endpoint uses recent conversation history from the same session.
+The `/chat` endpoint can use recent conversation history from the same session.
 
 Example first request:
 
@@ -121,7 +125,8 @@ Example first request:
 {
   "message": "What is workflow automation?",
   "role": "business",
-  "session_id": "business-demo-001"
+  "session_id": "business-demo-001",
+  "history_limit": 5
 }
 ```
 
@@ -131,7 +136,8 @@ Example follow-up request:
 {
   "message": "Give me an example for a clinic.",
   "role": "business",
-  "session_id": "business-demo-001"
+  "session_id": "business-demo-001",
+  "history_limit": 5
 }
 ```
 
@@ -146,17 +152,34 @@ Current user message:
 Give me an example for a clinic.
 ```
 
-The current implementation uses a maximum of five recent exchanges:
+### History-limit rules
 
-```text
-DEFAULT_HISTORY_LIMIT = 5
+The `history_limit` field controls how many recent stored exchanges are included in the prompt.
+
+| Value | Behaviour |
+|---|---|
+| Omitted | Uses the default limit of `5` |
+| `0` | Disables previous context for the current request |
+| `1`–`20` | Uses up to that number of recent exchanges |
+| Below `0` | Returns a `422` validation error |
+| Above `20` | Returns a `422` validation error |
+
+Example with memory disabled:
+
+```json
+{
+  "message": "Answer without using our earlier discussion.",
+  "role": "business",
+  "session_id": "business-demo-001",
+  "history_limit": 0
+}
 ```
 
-This prevents conversation prompts from growing without limit.
+Setting `history_limit` to `0` does not delete conversation history and does not prevent the new exchange from being saved. It only disables previous context for that request.
 
-Conversation history is isolated by session ID. A message sent under another session cannot inherit the first session's context.
+Conversation history remains isolated by session ID. A request cannot inherit context from another session.
 
-Only the original user message is stored in SQLite. The formatted context used internally for prompting is not saved as the new user message.
+Only the original user message is stored in SQLite. The formatted prompt context is not stored as the new user message.
 
 ## Current Architecture
 
@@ -239,11 +262,13 @@ Client
 ### Request flow for `POST /chat`
 
 ```text
-Client sends message, role, and session ID
+Client sends message, role, session ID, and optional history limit
   ↓
 Request middleware validates or generates a request ID
   ↓
 Pydantic validates the request body
+  ↓
+history_limit is checked against the allowed range of 0–20
   ↓
 Environment settings are loaded
   ↓
@@ -251,9 +276,11 @@ Provider factory selects the configured provider
   ↓
 Assistant role is normalized
   ↓
-SQLite retrieves recent messages for the session
+SQLite retrieves stored messages for the session
   ↓
-Conversation-context layer selects up to five recent exchanges
+Conversation-context layer selects the requested number of recent exchanges
+  ↓
+If history_limit is 0, only the current message is used
   ↓
 Previous exchanges and the current message are formatted together
   ↓
