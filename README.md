@@ -74,6 +74,10 @@ The current command-line application:
 - groups Swagger endpoints into System, Chat, and Conversations
 - exposes versioned API metadata
 - documents endpoint purposes through OpenAPI summaries
+- uses recent conversation history when generating new responses
+- isolates conversation memory by session ID
+- limits prompt context to the five most recent exchanges
+- prevents formatted prompt context from being duplicated in storage
 
 ## API Discovery
 
@@ -106,6 +110,53 @@ The endpoints are grouped into:
 - `System` — root and health endpoints
 - `Chat` — role-based response generation and storage
 - `Conversations` — saved conversation-history retrieval
+
+## Conversation-Aware Memory
+
+The `/chat` endpoint uses recent conversation history from the same session.
+
+Example first request:
+
+```json
+{
+  "message": "What is workflow automation?",
+  "role": "business",
+  "session_id": "business-demo-001"
+}
+```
+
+Example follow-up request:
+
+```json
+{
+  "message": "Give me an example for a clinic.",
+  "role": "business",
+  "session_id": "business-demo-001"
+}
+```
+
+Before generating the second response, the application retrieves earlier exchanges from `business-demo-001` and formats them as context:
+
+```text
+Previous conversation context:
+User: What is workflow automation?
+Assistant: ...
+
+Current user message:
+Give me an example for a clinic.
+```
+
+The current implementation uses a maximum of five recent exchanges:
+
+```text
+DEFAULT_HISTORY_LIMIT = 5
+```
+
+This prevents conversation prompts from growing without limit.
+
+Conversation history is isolated by session ID. A message sent under another session cannot inherit the first session's context.
+
+Only the original user message is stored in SQLite. The formatted context used internally for prompting is not saved as the new user message.
 
 ## Current Architecture
 
@@ -190,7 +241,7 @@ Client
 ```text
 Client sends message, role, and session ID
   ↓
-Middleware assigns and logs a request ID
+Request middleware validates or generates a request ID
   ↓
 Pydantic validates the request body
   ↓
@@ -198,19 +249,23 @@ Environment settings are loaded
   ↓
 Provider factory selects the configured provider
   ↓
-Role is normalized
+Assistant role is normalized
   ↓
-Role configuration is loaded from JSON
+SQLite retrieves recent messages for the session
+  ↓
+Conversation-context layer selects up to five recent exchanges
+  ↓
+Previous exchanges and the current message are formatted together
   ↓
 Prompt builder creates a role-specific prompt
   ↓
 Provider generates a response
   ↓
-Conversation is saved in SQLite
+Original user message and assistant response are saved in SQLite
   ↓
 Pydantic validates the response
   ↓
-FastAPI returns JSON with X-Request-ID
+FastAPI returns JSON with an X-Request-ID header
 ```
 
 ### Request flow for conversation retrieval
@@ -253,6 +308,9 @@ FastAPI returns structured conversation history
 - `tests/test_config.py` — environment-configuration tests
 - `tests/test_prompt_builder.py` — prompt and role-behaviour tests
 - `tests/test_mock_provider.py` — provider-behaviour tests
+```markdown
+- `app/conversation_context.py` — recent-message selection and multi-turn prompt context
+- `tests/test_conversation_context.py` — conversation-context unit tests
 
 ### Current API endpoints
 

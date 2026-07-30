@@ -471,3 +471,38 @@ Using the same structure for controlled errors and validation failures makes cli
 A working API should also be easy for other developers to discover and understand.
 
 Clear metadata, endpoint grouping, versioning, documentation, and automated tests make a backend easier to maintain and present professionally.
+
+---
+
+## Day 15 — Conversation-Aware Chat Memory
+
+### What I built
+
+- Added conversation-context utilities
+- Retrieved previous exchanges before generating a new response
+- Included recent conversation history in the next prompt
+- Limited prompt context to the five most recent exchanges
+- Kept conversation memory isolated by session ID
+- Stored only the original user message instead of duplicated prompt context
+- Added unit tests for context selection and formatting
+- Added API integration tests for multi-turn memory
+- Added unique session IDs to improve test reliability
+- Updated the application version to `0.7.0`
+
+### Concepts practised
+
+- Multi-turn conversation memory
+- Session-based context isolation
+- Retrieval-augmented prompt construction
+- Context-window limits
+- Prompt formatting
+- Database-backed memory
+- Unit testing
+- Integration testing
+- Test isolation with UUIDs
+
+### Key lesson
+
+Saving conversations is not the same as using conversation memory.
+
+A conversation-aware assistant must retrieve relevant previous exchanges, format them safely, and include them in the next prompt without mixing sessions or storing duplicated context.

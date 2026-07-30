@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException, status
 from fastapi.exceptions import RequestValidationError
 
 from app.config import load_settings
+from app.conversation_context import build_contextual_message
 from app.database import (
     get_messages_by_session,
     initialize_database,
@@ -26,7 +27,7 @@ from app.schemas import (
     StoredMessage,
 )
 
-API_VERSION = "0.6.0"
+API_VERSION = "0.7.0"
 APPLICATION_NAME = "AI Engineering Product Lab"
 
 app = FastAPI(
@@ -100,16 +101,30 @@ def health_check() -> HealthResponse:
     response_model=ChatResponse,
     status_code=status.HTTP_200_OK,
     tags=["Chat"],
-    summary="Generate and store an assistant response",
+    summary="Generate and store a conversation-aware response",
 )
 def chat(request: ChatRequest) -> ChatResponse:
-    """Build a prompt, generate a response, and save the conversation."""
+    """Generate a response using recent conversation history."""
     try:
         settings = load_settings()
         provider = create_provider(settings)
 
         selected_role = normalize_role(request.role)
-        prompt = build_prompt(request.message, selected_role)
+
+        previous_messages = get_messages_by_session(
+            request.session_id
+        )
+
+        contextual_message = build_contextual_message(
+            current_message=request.message,
+            previous_messages=previous_messages,
+        )
+
+        prompt = build_prompt(
+            contextual_message,
+            selected_role,
+        )
+
         reply = provider.generate(prompt)
         provider_name = type(provider).__name__
 

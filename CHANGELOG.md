@@ -2,6 +2,31 @@
 
 All notable changes to the AI Engineering Product Lab are documented here.
 
+## [0.7.0] — 2026-07-30
+
+### Added
+
+- Conversation-aware chat responses
+- Retrieval of previous messages before prompt construction
+- Recent-message selection with a five-exchange limit
+- Conversation-context formatting utilities
+- Session-isolation tests
+- Multi-turn API integration tests
+- Unique test session identifiers
+
+### Changed
+
+- Updated the API version to `0.7.0`
+- Updated `/chat` to include previous session context
+- Improved API tests to avoid data left by earlier test runs
+- Stored only original user messages instead of formatted prompt context
+
+### Security and Privacy
+
+- Kept conversation memory isolated by session ID
+- Prevented one session from inheriting another session's history
+- Limited the amount of stored history inserted into prompts
+
 ## [0.6.0] — 2026-07-30
 
 ### Added
