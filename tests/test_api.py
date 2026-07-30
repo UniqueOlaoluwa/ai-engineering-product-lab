@@ -7,6 +7,19 @@ from app.database import initialize_database
 
 client = TestClient(app)
 
+def test_root_endpoint_returns_api_information() -> None:
+    """The root endpoint should describe the running API."""
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "application": "AI Engineering Product Lab",
+        "version": "0.6.0",
+        "status": "running",
+        "documentation": "/docs",
+        "health": "/health",
+    }
+    assert "X-Request-ID" in response.headers
 
 def test_health_endpoint_returns_ok() -> None:
     """The health endpoint should report a successful application state."""
@@ -16,7 +29,7 @@ def test_health_endpoint_returns_ok() -> None:
     assert response.json() == {
         "status": "ok",
         "application": "AI Engineering Product Lab",
-        "version": "0.5.0",
+        "version": "0.6.0",
     }
 
 

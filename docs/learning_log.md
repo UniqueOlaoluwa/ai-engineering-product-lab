@@ -438,3 +438,36 @@ Even values used only for logging should be treated as untrusted input and valid
 A production API should return predictable error responses.
 
 Using the same structure for controlled errors and validation failures makes client integration and debugging easier.
+
+---
+
+## Day 14 — API Metadata and Release Hardening
+
+### What I built
+
+- Added a root API-information endpoint
+- Added a structured root-response model
+- Updated the application version to `0.6.0`
+- Added API title, summary, description, contact, and licence metadata
+- Grouped endpoints in Swagger using tags
+- Added clearer endpoint summaries
+- Added automated tests for the root endpoint
+- Verified that request tracing applies to the root endpoint
+- Prepared the project for a tagged release
+
+### Concepts practised
+
+- Semantic versioning
+- API metadata
+- OpenAPI documentation
+- Swagger endpoint grouping
+- Root discovery endpoints
+- Response-model validation
+- Release preparation
+- Regression testing
+
+### Key lesson
+
+A working API should also be easy for other developers to discover and understand.
+
+Clear metadata, endpoint grouping, versioning, documentation, and automated tests make a backend easier to maintain and present professionally.

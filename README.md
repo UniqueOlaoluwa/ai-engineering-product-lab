@@ -70,6 +70,42 @@ The current command-line application:
 - returns consistent structured API error responses
 - includes request IDs in error bodies and headers
 - handles both HTTP errors and request-validation failures centrally
+- provides a root endpoint with API information
+- groups Swagger endpoints into System, Chat, and Conversations
+- exposes versioned API metadata
+- documents endpoint purposes through OpenAPI summaries
+
+## API Discovery
+
+The root endpoint provides basic information about the running API:
+
+```text
+GET /
+```
+
+Example response:
+
+```json
+{
+  "application": "AI Engineering Product Lab",
+  "version": "0.6.0",
+  "status": "running",
+  "documentation": "/docs",
+  "health": "/health"
+}
+```
+
+Interactive API documentation is available at:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+The endpoints are grouped into:
+
+- `System` — root and health endpoints
+- `Chat` — role-based response generation and storage
+- `Conversations` — saved conversation-history retrieval
 
 ## Current Architecture
 
@@ -220,11 +256,12 @@ FastAPI returns structured conversation history
 
 ### Current API endpoints
 
-| Method | Endpoint | Purpose |
-|---|---|---|
-| `GET` | `/health` | Reports whether the API is running |
-| `POST` | `/chat` | Generates and saves a role-specific chatbot response |
-| `GET` | `/conversations/{session_id}` | Retrieves saved conversation history |
+| Method | Endpoint | Group | Purpose |
+|---|---|---|---|
+| `GET` | `/` | System | Returns API information and useful paths |
+| `GET` | `/health` | System | Reports whether the API is running |
+| `POST` | `/chat` | Chat | Generates and saves a role-specific response |
+| `GET` | `/conversations/{session_id}` | Conversations | Retrieves saved conversation history |
 
 ### Current storage
 
@@ -545,6 +582,28 @@ X-Request-ID: client-request-123
 ```
 
 This allows clients to report one identifier that can be matched with server logs.
+
+## Current Release
+
+Current application version:
+
+```text
+0.6.0
+```
+
+This release includes:
+
+- role-based prompt construction
+- configurable JSON assistant roles
+- provider abstraction and mock provider
+- FastAPI endpoints
+- request and response validation
+- SQLite conversation persistence
+- conversation-history retrieval
+- request IDs and structured logging
+- centralized HTTP and validation-error responses
+- interactive OpenAPI documentation
+- automated application, API, database, provider, prompt, and middleware tests
 
 ## Product Roadmap
 

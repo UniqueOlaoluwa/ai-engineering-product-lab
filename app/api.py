@@ -22,18 +22,28 @@ from app.schemas import (
     ChatResponse,
     ConversationResponse,
     HealthResponse,
+    RootResponse,
     StoredMessage,
 )
 
-API_VERSION = "0.5.0"
+API_VERSION = "0.6.0"
+APPLICATION_NAME = "AI Engineering Product Lab"
 
 app = FastAPI(
-    title="AI Engineering Product Lab API",
+    title=f"{APPLICATION_NAME} API",
+    summary="A practical backend for role-based AI assistants.",
     description=(
-        "A learning API for building practical AI assistants, "
-        "business automation systems, and WhatsApp-style applications."
+        "A learning and product-development API for building "
+        "role-based AI assistants, business automation systems, "
+        "conversation storage, and WhatsApp-style applications."
     ),
     version=API_VERSION,
+    contact={
+        "name": "AI WebCo",
+    },
+    license_info={
+        "name": "Learning and portfolio project",
+    },
 )
 
 app.middleware("http")(request_logging_middleware)
@@ -52,15 +62,35 @@ initialize_database()
 
 
 @app.get(
+    "/",
+    response_model=RootResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["System"],
+    summary="Get API information",
+)
+def root() -> RootResponse:
+    """Return basic API information and useful endpoint paths."""
+    return RootResponse(
+        application=APPLICATION_NAME,
+        version=API_VERSION,
+        status="running",
+        documentation="/docs",
+        health="/health",
+    )
+
+
+@app.get(
     "/health",
     response_model=HealthResponse,
     status_code=status.HTTP_200_OK,
+    tags=["System"],
+    summary="Check application health",
 )
 def health_check() -> HealthResponse:
     """Return the current application health status."""
     return HealthResponse(
         status="ok",
-        application="AI Engineering Product Lab",
+        application=APPLICATION_NAME,
         version=API_VERSION,
     )
 
@@ -69,6 +99,8 @@ def health_check() -> HealthResponse:
     "/chat",
     response_model=ChatResponse,
     status_code=status.HTTP_200_OK,
+    tags=["Chat"],
+    summary="Generate and store an assistant response",
 )
 def chat(request: ChatRequest) -> ChatResponse:
     """Build a prompt, generate a response, and save the conversation."""
@@ -121,6 +153,8 @@ def chat(request: ChatRequest) -> ChatResponse:
     "/conversations/{session_id}",
     response_model=ConversationResponse,
     status_code=status.HTTP_200_OK,
+    tags=["Conversations"],
+    summary="Retrieve conversation history",
 )
 def get_conversation(session_id: str) -> ConversationResponse:
     """Return all stored chatbot exchanges for a session."""
