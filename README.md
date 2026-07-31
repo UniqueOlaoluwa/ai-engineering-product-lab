@@ -91,6 +91,12 @@ The current command-line application:
 - supports pagination using limit and offset
 - orders conversations by recent activity
 - uses database indexes for session and date lookups
+- searches conversations by session ID
+- performs case-insensitive partial matching
+- combines search with limit and offset pagination
+- returns totals for filtered results
+- validates blank and excessive search values
+- isolates automated API tests from development data
 
 ## API Discovery
 
@@ -301,6 +307,61 @@ offset=-1
 
 The database uses indexes on `session_id` and `created_at` to improve lookup performance as stored data grows.
 
+## Conversation Search
+
+The conversation-listing endpoint supports optional session-ID search:
+
+```text
+GET /conversations?search=clinic
+```
+
+Search is:
+
+- case-insensitive
+- based on partial session-ID matches
+- compatible with pagination
+- limited to one hundred characters
+
+Example:
+
+```text
+GET /conversations?search=clinic&limit=20&offset=0
+```
+
+A search for `clinic` may match:
+
+```text
+clinic-demo-001
+CLINIC-support-session
+customer-clinic-assistant
+```
+
+The `total` field represents every matching session, not only the records returned on the current page.
+
+Search and pagination can be combined:
+
+```text
+GET /conversations?search=clinic&limit=1&offset=0
+GET /conversations?search=clinic&limit=1&offset=1
+```
+
+Invalid searches return structured `422` validation errors.
+
+Examples:
+
+```text
+search containing only spaces
+search longer than 100 characters
+```
+
+The database query remains parameterized:
+
+```sql
+WHERE LOWER(session_id) LIKE LOWER(?)
+```
+
+Automated API tests use separate project-local SQLite databases inside `.test_storage`. This prevents test runs from filling the development database.
+
 ## Current Architecture
 
 ```text
@@ -479,6 +540,41 @@ If messages were deleted, API returns session ID and deleted count
   ↓
 Response includes X-Request-ID
 ```
+### Request flow for conversation search
+
+```text
+Client sends GET /conversations with optional search
+  ↓
+FastAPI validates limit, offset, and search constraints
+  ↓
+Search value is trimmed and normalized
+  ↓
+Database uses a parameterized partial-match condition
+  ↓
+Count query calculates matching session total
+  ↓
+Listing query groups matching messages by session ID
+  ↓
+Conversation summaries are ordered by recent activity
+  ↓
+Limit and offset are applied
+  ↓
+FastAPI returns filtered pagination metadata and summaries
+```
+
+### Automated test isolation
+
+```text
+Pytest starts one API test
+  ↓
+An isolated SQLite database is created inside .test_storage
+  ↓
+The test writes only to that temporary database
+  ↓
+The development database remains unchanged
+  ↓
+The next API test receives a different isolated database
+```
 
 ### Main application files
 
@@ -486,7 +582,7 @@ Response includes X-Request-ID
 - `app/schemas.py` — request and response validation models
 - `app/middleware.py` — request IDs, tracing, and request-completion logging
 - `app/logging_config.py` — centralized application logger configuration
-- `app/database.py` — SQLite connection, indexes, saving, retrieval, deletion, session counting, and paginated conversation listing
+- `app/database.py` — SQLite storage, indexes, retrieval, deletion, pagination, session counting, and conversation search
 - `app/config.py` — environment-variable and application-settings loading
 - `app/prompt_builder.py` — role normalization and prompt construction
 - `app/templates.py` — JSON role-template loading and validation
@@ -506,6 +602,7 @@ Response includes X-Request-ID
 - `app/conversation_context.py` — recent-message selection and multi-turn prompt context
 - `tests/test_conversation_context.py` — conversation-context unit tests
 - `tests/test_conversation_listing.py` — database tests for grouped conversation summaries and pagination
+- `tests/conftest.py` — shared pytest configuration for isolated, project-local API test databases
 
 ### Current API endpoints
 
@@ -514,7 +611,7 @@ Response includes X-Request-ID
 | `GET` | `/` | System | Returns API information and useful paths |
 | `GET` | `/health` | System | Reports whether the API is running |
 | `POST` | `/chat` | Chat | Generates and saves a role-specific response |
-| `GET` | `/conversations` | Conversations | Lists paginated conversation summaries |
+| `GET` | `/conversations` | Conversations | Lists, searches and paginates conversation summaries |
 | `GET` | `/conversations/{session_id}` | Conversations | Retrieves saved conversation history |
 | `DELETE` | `/conversations/{session_id}` | Conversations | Deletes all messages in a conversation |
 

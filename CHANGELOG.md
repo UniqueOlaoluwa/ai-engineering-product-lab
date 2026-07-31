@@ -2,6 +2,35 @@
 
 All notable changes to the AI Engineering Product Lab are documented here.
 
+## [0.11.0] — 2026-07-31
+
+### Added
+
+- Optional `search` query parameter for `GET /conversations`
+- Case-insensitive session-ID searching
+- Partial session-ID matching
+- Filtered conversation counting
+- Search combined with pagination
+- Search normalization and validation
+- Database and API integration tests for search
+- Isolated project-local SQLite databases for API tests
+
+### Changed
+
+- Updated the API version to `0.11.0`
+- Updated conversation listing to support optional filters
+- Updated OpenAPI documentation with search constraints
+- Reduced test impact on the development database
+- Improved test reliability on low-memory Windows systems
+
+### Validation and Safety
+
+- Blank searches return structured `422` errors
+- Searches longer than one hundred characters are rejected
+- Search SQL remains parameterized
+- Filtered totals use the same condition as filtered listings
+- API tests no longer add records to the development database
+
 ## [0.10.0] — 2026-07-30
 
 ### Added

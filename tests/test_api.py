@@ -40,7 +40,7 @@ def test_root_endpoint_returns_api_information() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "application": "AI Engineering Product Lab",
-        "version": "0.10.0",
+        "version": "0.11.0",
         "status": "running",
         "documentation": "/docs",
         "health": "/health",
@@ -56,7 +56,7 @@ def test_health_endpoint_returns_ok() -> None:
     assert response.json() == {
         "status": "ok",
         "application": "AI Engineering Product Lab",
-        "version": "0.10.0",
+        "version": "0.11.0",
     }
 
 
@@ -459,6 +459,220 @@ def test_list_conversations_uses_default_pagination() -> None:
     assert response_data["offset"] == 0
     assert isinstance(response_data["total"], int)
     assert isinstance(response_data["conversations"], list)
+
+
+def test_search_filters_conversations_case_insensitively() -> None:
+    """Search should match session IDs regardless of case."""
+    search_token = uuid4().hex[:8]
+
+    first_session = f"clinic-{search_token}-one"
+    second_session = f"CLINIC-{search_token}-two"
+    unrelated_session = f"retail-{search_token}-three"
+
+    first_response = create_chat_message(
+        session_id=first_session,
+        message="First clinic message.",
+    )
+
+    second_response = create_chat_message(
+        session_id=second_session,
+        message="Second clinic message.",
+    )
+
+    unrelated_response = create_chat_message(
+        session_id=unrelated_session,
+        message="Retail message.",
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert unrelated_response.status_code == 200
+
+    response = client.get(
+        "/conversations",
+        params={
+            "search": f"clinic-{search_token}",
+            "limit": 20,
+            "offset": 0,
+        },
+    )
+
+    response_data = response.json()
+
+    session_ids = {
+        item["session_id"]
+        for item in response_data["conversations"]
+    }
+
+    assert response.status_code == 200
+    assert response_data["total"] == 2
+    assert first_session in session_ids
+    assert second_session in session_ids
+    assert unrelated_session not in session_ids
+
+
+def test_search_supports_partial_session_matches() -> None:
+    """Search should match text within a session identifier."""
+    search_token = uuid4().hex[:8]
+
+    matching_session = (
+        f"customer-clinic-{search_token}-support"
+    )
+    unrelated_session = (
+        f"customer-retail-{search_token}-support"
+    )
+
+    matching_response = create_chat_message(
+        session_id=matching_session,
+        message="Clinic support message.",
+    )
+
+    unrelated_response = create_chat_message(
+        session_id=unrelated_session,
+        message="Retail support message.",
+    )
+
+    assert matching_response.status_code == 200
+    assert unrelated_response.status_code == 200
+
+    response = client.get(
+        "/conversations",
+        params={
+            "search": f"clinic-{search_token}",
+        },
+    )
+
+    response_data = response.json()
+
+    assert response.status_code == 200
+    assert response_data["total"] == 1
+    assert len(response_data["conversations"]) == 1
+    assert (
+        response_data["conversations"][0]["session_id"]
+        == matching_session
+    )
+
+
+def test_search_combines_with_pagination() -> None:
+    """Filtered conversations should support limit and offset."""
+    search_token = uuid4().hex[:8]
+    matching_sessions = []
+
+    for number in range(3):
+        session_id = f"clinic-{search_token}-{number}"
+        matching_sessions.append(session_id)
+
+        response = create_chat_message(
+            session_id=session_id,
+            message=f"Clinic pagination message {number}.",
+        )
+
+        assert response.status_code == 200
+
+    unrelated_response = create_chat_message(
+        session_id=f"retail-{search_token}",
+        message="Retail pagination message.",
+    )
+
+    assert unrelated_response.status_code == 200
+
+    first_page = client.get(
+        "/conversations",
+        params={
+            "search": f"clinic-{search_token}",
+            "limit": 2,
+            "offset": 0,
+        },
+    )
+
+    second_page = client.get(
+        "/conversations",
+        params={
+            "search": f"clinic-{search_token}",
+            "limit": 2,
+            "offset": 2,
+        },
+    )
+
+    first_data = first_page.json()
+    second_data = second_page.json()
+
+    first_ids = {
+        item["session_id"]
+        for item in first_data["conversations"]
+    }
+
+    second_ids = {
+        item["session_id"]
+        for item in second_data["conversations"]
+    }
+
+    assert first_page.status_code == 200
+    assert second_page.status_code == 200
+    assert first_data["total"] == 3
+    assert second_data["total"] == 3
+    assert len(first_data["conversations"]) == 2
+    assert len(second_data["conversations"]) == 1
+    assert first_ids.isdisjoint(second_ids)
+    assert first_ids | second_ids == set(matching_sessions)
+
+
+def test_search_returns_empty_result_for_no_matches() -> None:
+    """A valid unmatched search should return an empty page."""
+    search_token = uuid4().hex
+
+    response = client.get(
+        "/conversations",
+        params={
+            "search": f"missing-{search_token}",
+            "limit": 20,
+            "offset": 0,
+        },
+    )
+
+    response_data = response.json()
+
+    assert response.status_code == 200
+    assert response_data == {
+        "total": 0,
+        "limit": 20,
+        "offset": 0,
+        "conversations": [],
+    }
+
+
+def test_search_rejects_blank_value() -> None:
+    """A whitespace-only search should return a validation error."""
+    response = client.get(
+        "/conversations",
+        params={
+            "search": "   ",
+        },
+    )
+
+    response_data = response.json()
+
+    assert response.status_code == 422
+    assert response_data["error"] == "Request validation failed."
+    assert response_data["status_code"] == 422
+    assert isinstance(response_data["details"], list)
+
+
+def test_search_rejects_value_above_maximum_length() -> None:
+    """A search longer than 100 characters should fail validation."""
+    response = client.get(
+        "/conversations",
+        params={
+            "search": "a" * 101,
+        },
+    )
+
+    response_data = response.json()
+
+    assert response.status_code == 422
+    assert response_data["error"] == "Request validation failed."
+    assert response_data["status_code"] == 422
+    assert isinstance(response_data["details"], list)
 
 
 def test_list_conversations_rejects_zero_limit() -> None:

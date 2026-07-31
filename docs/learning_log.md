@@ -605,3 +605,41 @@ Deleting one conversation must remove only that session’s records and must not
 A conversation dashboard should retrieve summaries instead of loading every message from every session.
 
 Pagination and database indexes help keep listing operations controlled as stored data grows.
+
+---
+
+## Day 19 — Conversation Search and Filtering
+
+### What I built
+
+- Added optional conversation search
+- Added case-insensitive session-ID matching
+- Added partial-text matching
+- Combined conversation search with pagination
+- Added filtered conversation counting
+- Added search normalization and validation
+- Rejected blank searches
+- Limited search values to one hundred characters
+- Added database and API integration tests
+- Isolated API tests from the development database
+- Updated the application version to `0.11.0`
+
+### Concepts practised
+
+- Optional API filters
+- SQL `LIKE`
+- Case-insensitive matching
+- Partial-string searching
+- Parameterized SQL
+- Input normalization
+- Search pagination
+- Filtered result counts
+- OpenAPI query validation
+- SQLite test isolation
+- Resource-aware testing
+
+### Key lesson
+
+Filtered pagination requires the count query and listing query to use the same search conditions.
+
+Automated API tests should also use isolated databases so repeated tests do not pollute development data or place unnecessary load on the computer.

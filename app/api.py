@@ -8,6 +8,7 @@ from app.conversation_context import build_contextual_message
 from app.database import (
     DEFAULT_CONVERSATION_LIMIT,
     MAX_CONVERSATION_LIMIT,
+    MAX_CONVERSATION_SEARCH_LENGTH,
     count_conversation_sessions,
     delete_messages_by_session,
     get_messages_by_session,
@@ -35,7 +36,7 @@ from app.schemas import (
     StoredMessage,
 )
 
-API_VERSION = "0.10.0"
+API_VERSION = "0.11.0"
 APPLICATION_NAME = "AI Engineering Product Lab"
 
 app = FastAPI(
@@ -178,7 +179,7 @@ def chat(request: ChatRequest) -> ChatResponse:
     response_model=ConversationListResponse,
     status_code=status.HTTP_200_OK,
     tags=["Conversations"],
-    summary="List stored conversations",
+    summary="List and search stored conversations",
 )
 def list_conversations(
     limit: int = Query(
@@ -192,14 +193,28 @@ def list_conversations(
         ge=0,
         description="Number of conversation summaries to skip.",
     ),
+    search: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=MAX_CONVERSATION_SEARCH_LENGTH,
+        pattern=r".*\S.*",
+        description=(
+            "Optional case-insensitive partial search applied "
+            "to conversation session IDs."
+        ),
+        examples=["clinic"],
+    ),
 ) -> ConversationListResponse:
-    """Return paginated conversation summaries."""
+    """Return paginated and optionally filtered conversations."""
     try:
-        total = count_conversation_sessions()
+        total = count_conversation_sessions(
+            search=search,
+        )
 
         conversations = list_conversation_sessions(
             limit=limit,
             offset=offset,
+            search=search,
         )
 
         summaries = [

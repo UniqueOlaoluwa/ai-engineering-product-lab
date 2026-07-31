@@ -11,6 +11,7 @@ DATABASE_PATH = DATABASE_DIR / "conversations.db"
 
 DEFAULT_CONVERSATION_LIMIT = 20
 MAX_CONVERSATION_LIMIT = 100
+MAX_CONVERSATION_SEARCH_LENGTH = 100
 
 
 def get_connection() -> sqlite3.Connection:
@@ -24,7 +25,7 @@ def get_connection() -> sqlite3.Connection:
 
 
 def initialize_database() -> None:
-    """Create the required database tables when they do not exist."""
+    """Create the required database tables and indexes."""
     with closing(get_connection()) as connection:
         connection.execute(
             """
@@ -186,15 +187,50 @@ def validate_conversation_pagination(
         raise ValueError("Conversation offset cannot be negative.")
 
 
-def count_conversation_sessions() -> int:
-    """Return the number of distinct stored conversation sessions."""
+def normalize_conversation_search(
+    search: str | None,
+) -> str | None:
+    """Validate and normalize an optional conversation search value."""
+    if search is None:
+        return None
+
+    cleaned_search = search.strip()
+
+    if not cleaned_search:
+        raise ValueError("Conversation search cannot be blank.")
+
+    if len(cleaned_search) > MAX_CONVERSATION_SEARCH_LENGTH:
+        raise ValueError(
+            "Conversation search cannot exceed "
+            f"{MAX_CONVERSATION_SEARCH_LENGTH} characters."
+        )
+
+    return cleaned_search
+
+
+def count_conversation_sessions(
+    search: str | None = None,
+) -> int:
+    """Return the number of distinct matching conversation sessions."""
+    cleaned_search = normalize_conversation_search(search)
+
     with closing(get_connection()) as connection:
-        row = connection.execute(
-            """
-            SELECT COUNT(DISTINCT session_id) AS total
-            FROM messages
-            """
-        ).fetchone()
+        if cleaned_search is None:
+            row = connection.execute(
+                """
+                SELECT COUNT(DISTINCT session_id) AS total
+                FROM messages
+                """
+            ).fetchone()
+        else:
+            row = connection.execute(
+                """
+                SELECT COUNT(DISTINCT session_id) AS total
+                FROM messages
+                WHERE LOWER(session_id) LIKE LOWER(?)
+                """,
+                (f"%{cleaned_search}%",),
+            ).fetchone()
 
     if row is None:
         return 0
@@ -205,25 +241,49 @@ def count_conversation_sessions() -> int:
 def list_conversation_sessions(
     limit: int = DEFAULT_CONVERSATION_LIMIT,
     offset: int = 0,
+    search: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Return paginated conversation summaries by recent activity."""
+    """Return paginated and optionally filtered conversation summaries."""
     validate_conversation_pagination(limit, offset)
+    cleaned_search = normalize_conversation_search(search)
 
     with closing(get_connection()) as connection:
-        rows = connection.execute(
-            """
-            SELECT
-                session_id,
-                COUNT(*) AS message_count,
-                MIN(created_at) AS first_created_at,
-                MAX(created_at) AS last_created_at
-            FROM messages
-            GROUP BY session_id
-            ORDER BY last_created_at DESC, MAX(id) DESC
-            LIMIT ?
-            OFFSET ?
-            """,
-            (limit, offset),
-        ).fetchall()
+        if cleaned_search is None:
+            rows = connection.execute(
+                """
+                SELECT
+                    session_id,
+                    COUNT(*) AS message_count,
+                    MIN(created_at) AS first_created_at,
+                    MAX(created_at) AS last_created_at
+                FROM messages
+                GROUP BY session_id
+                ORDER BY last_created_at DESC, MAX(id) DESC
+                LIMIT ?
+                OFFSET ?
+                """,
+                (limit, offset),
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                """
+                SELECT
+                    session_id,
+                    COUNT(*) AS message_count,
+                    MIN(created_at) AS first_created_at,
+                    MAX(created_at) AS last_created_at
+                FROM messages
+                WHERE LOWER(session_id) LIKE LOWER(?)
+                GROUP BY session_id
+                ORDER BY last_created_at DESC, MAX(id) DESC
+                LIMIT ?
+                OFFSET ?
+                """,
+                (
+                    f"%{cleaned_search}%",
+                    limit,
+                    offset,
+                ),
+            ).fetchall()
 
     return [dict(row) for row in rows]
