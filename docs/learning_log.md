@@ -643,3 +643,37 @@ Pagination and database indexes help keep listing operations controlled as store
 Filtered pagination requires the count query and listing query to use the same search conditions.
 
 Automated API tests should also use isolated databases so repeated tests do not pollute development data or place unnecessary load on the computer.
+
+---
+
+## Day 20 — Message Pagination Within Conversations
+
+### What I built
+
+- Added pagination for messages inside a conversation
+- Added default and maximum message-page limits
+- Added total message counting per session
+- Added paginated message retrieval using limit and offset
+- Updated `GET /conversations/{session_id}`
+- Added pagination metadata to conversation responses
+- Preserved structured 404 behaviour for missing sessions
+- Added focused database and API tests
+- Updated the application version to `0.12.0`
+
+### Concepts practised
+
+- Nested-resource pagination
+- SQL `LIMIT` and `OFFSET`
+- Message counting
+- Response metadata
+- Session isolation
+- Query-parameter validation
+- Modular database architecture
+- OpenAPI pagination constraints
+- Resource-aware testing
+
+### Key lesson
+
+A conversation may contain many stored exchanges.
+
+Returning only the requested page reduces response size, database work, and memory usage while still reporting the total number of stored messages.

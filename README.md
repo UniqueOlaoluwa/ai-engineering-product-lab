@@ -97,6 +97,11 @@ The current command-line application:
 - returns totals for filtered results
 - validates blank and excessive search values
 - isolates automated API tests from development data
+- paginates messages inside individual conversations
+- limits message pages to a maximum of one hundred records
+- reports total stored messages separately from current-page count
+- supports empty pages when an offset passes the end
+- isolates message-pagination tests from development data
 
 ## API Discovery
 
@@ -362,6 +367,86 @@ WHERE LOWER(session_id) LIKE LOWER(?)
 
 Automated API tests use separate project-local SQLite databases inside `.test_storage`. This prevents test runs from filling the development database.
 
+## Message Pagination
+
+Stored messages inside a conversation can be retrieved in controlled pages:
+
+```text
+GET /conversations/{session_id}?limit=20&offset=0
+```
+
+The endpoint accepts:
+
+| Parameter | Default | Allowed values | Purpose |
+|---|---:|---:|---|
+| `limit` | `20` | `1–100` | Maximum number of messages returned |
+| `offset` | `0` | `0` or greater | Number of stored messages skipped |
+
+Example:
+
+```text
+GET /conversations/clinic-demo-001?limit=2&offset=0
+```
+
+Example response:
+
+```json
+{
+  "session_id": "clinic-demo-001",
+  "total": 5,
+  "limit": 2,
+  "offset": 0,
+  "message_count": 2,
+  "messages": [
+    {
+      "id": 1,
+      "role": "business",
+      "user_message": "Question 1",
+      "assistant_reply": "Answer 1",
+      "provider": "MockLLMProvider",
+      "created_at": "2026-07-31T12:00:00"
+    }
+  ]
+}
+```
+
+The pagination fields mean:
+
+- `total` — every stored exchange in the session
+- `limit` — requested maximum page size
+- `offset` — number of earlier exchanges skipped
+- `message_count` — number returned on the current page
+
+An offset beyond the final stored message returns a successful empty page:
+
+```json
+{
+  "session_id": "clinic-demo-001",
+  "total": 5,
+  "limit": 20,
+  "offset": 100,
+  "message_count": 0,
+  "messages": []
+}
+```
+
+An unknown session still returns:
+
+```text
+404 Not Found
+```
+
+Invalid limits or offsets return structured `422` validation responses.
+
+The query remains parameterized:
+
+```sql
+WHERE session_id = ?
+ORDER BY id ASC
+LIMIT ?
+OFFSET ?
+```
+
 ## Current Architecture
 
 ```text
@@ -575,6 +660,26 @@ The development database remains unchanged
   ↓
 The next API test receives a different isolated database
 ```
+### Request flow for paginated message retrieval
+
+```text
+Client sends GET /conversations/{session_id}
+with limit and offset
+  ↓
+FastAPI validates pagination values
+  ↓
+Database counts all messages belonging to the session
+  ↓
+If the total is zero, API returns structured 404
+  ↓
+Database retrieves only the requested page
+  ↓
+Messages are ordered from oldest to newest
+  ↓
+Pydantic validates the pagination metadata and messages
+  ↓
+FastAPI returns total, limit, offset, message count, and page data
+```
 
 ### Main application files
 
@@ -603,6 +708,9 @@ The next API test receives a different isolated database
 - `tests/test_conversation_context.py` — conversation-context unit tests
 - `tests/test_conversation_listing.py` — database tests for grouped conversation summaries and pagination
 - `tests/conftest.py` — shared pytest configuration for isolated, project-local API test databases
+- `app/message_pagination.py` — message counting, validation, and paginated retrieval for individual sessions
+- `tests/test_message_pagination.py` — focused database tests for message pagination
+- `tests/test_message_pagination_api.py` — focused endpoint tests for paginated conversation retrieval
 
 ### Current API endpoints
 
@@ -612,7 +720,7 @@ The next API test receives a different isolated database
 | `GET` | `/health` | System | Reports whether the API is running |
 | `POST` | `/chat` | Chat | Generates and saves a role-specific response |
 | `GET` | `/conversations` | Conversations | Lists, searches and paginates conversation summaries |
-| `GET` | `/conversations/{session_id}` | Conversations | Retrieves saved conversation history |
+| `GET` | `/conversations/{session_id}` | Conversations | Retrieves paginated messages from one conversation |
 | `DELETE` | `/conversations/{session_id}` | Conversations | Deletes all messages in a conversation |
 
 ### Current storage

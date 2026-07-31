@@ -2,6 +2,33 @@
 
 All notable changes to the AI Engineering Product Lab are documented here.
 
+## [0.12.0] — 2026-07-31
+
+### Added
+
+- Message pagination inside individual conversations
+- `limit` and `offset` parameters for `GET /conversations/{session_id}`
+- Total stored-message count per session
+- Current-page message count
+- Dedicated message-pagination query module
+- Focused database and API pagination tests
+- OpenAPI constraints for message-page values
+
+### Changed
+
+- Updated the API version to `0.12.0`
+- Updated conversation retrieval to return paginated responses
+- Expanded conversation-response metadata
+- Reduced the maximum amount of conversation data returned by one request
+
+### Validation and Performance
+
+- Message limits must be between `1` and `100`
+- Message offsets cannot be negative
+- Unknown sessions continue to return structured `404` responses
+- Offsets beyond the final message return successful empty pages
+- Database retrieval uses parameterized `LIMIT` and `OFFSET`
+
 ## [0.11.0] — 2026-07-31
 
 ### Added

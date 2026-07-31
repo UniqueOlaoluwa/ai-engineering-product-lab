@@ -84,9 +84,12 @@ class StoredMessage(BaseModel):
 
 
 class ConversationResponse(BaseModel):
-    """Define the stored conversation returned by the API."""
+    """Define a paginated stored conversation response."""
 
     session_id: str
+    total: int
+    limit: int
+    offset: int
     message_count: int
     messages: list[StoredMessage]
 

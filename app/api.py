@@ -21,6 +21,12 @@ from app.error_handlers import (
     validation_exception_handler,
 )
 from app.exceptions import PromptTemplateError, ProviderError
+from app.message_pagination import (
+    DEFAULT_MESSAGE_LIMIT,
+    MAX_MESSAGE_LIMIT,
+    count_messages_by_session,
+    get_messages_by_session_page,
+)
 from app.middleware import request_logging_middleware
 from app.prompt_builder import build_prompt, get_role_name, normalize_role
 from app.providers.factory import create_provider
@@ -36,7 +42,7 @@ from app.schemas import (
     StoredMessage,
 )
 
-API_VERSION = "0.11.0"
+API_VERSION = "0.12.0"
 APPLICATION_NAME = "AI Engineering Product Lab"
 
 app = FastAPI(
@@ -246,18 +252,37 @@ def list_conversations(
     response_model=ConversationResponse,
     status_code=status.HTTP_200_OK,
     tags=["Conversations"],
-    summary="Retrieve conversation history",
+    summary="Retrieve paginated conversation history",
 )
-def get_conversation(session_id: str) -> ConversationResponse:
-    """Return all stored chatbot exchanges for a session."""
+def get_conversation(
+    session_id: str,
+    limit: int = Query(
+        default=DEFAULT_MESSAGE_LIMIT,
+        ge=1,
+        le=MAX_MESSAGE_LIMIT,
+        description="Maximum number of messages to return.",
+    ),
+    offset: int = Query(
+        default=0,
+        ge=0,
+        description="Number of stored messages to skip.",
+    ),
+) -> ConversationResponse:
+    """Return one paginated page of exchanges for a session."""
     try:
-        messages = get_messages_by_session(session_id)
+        total = count_messages_by_session(session_id)
 
-        if not messages:
+        if total == 0:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Conversation session not found.",
             )
+
+        messages = get_messages_by_session_page(
+            session_id=session_id,
+            limit=limit,
+            offset=offset,
+        )
 
         stored_messages = [
             StoredMessage(
@@ -273,6 +298,9 @@ def get_conversation(session_id: str) -> ConversationResponse:
 
         return ConversationResponse(
             session_id=session_id,
+            total=total,
+            limit=limit,
+            offset=offset,
             message_count=len(stored_messages),
             messages=stored_messages,
         )
