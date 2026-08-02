@@ -102,6 +102,12 @@ The current command-line application:
 - reports total stored messages separately from current-page count
 - supports empty pages when an offset passes the end
 - isolates message-pagination tests from development data
+- processes chatbot messages through a reusable service layer
+- accepts simplified WhatsApp-style webhook payloads
+- maps phone numbers to stable conversation sessions
+- protects webhook processing against duplicate deliveries
+- returns stored results without calling the AI twice
+- stores webhook event metadata in SQLite
 
 ## API Discovery
 
@@ -447,6 +453,166 @@ LIMIT ?
 OFFSET ?
 ```
 
+## Reusable Chat Service
+
+Chat processing is handled by:
+
+```text
+app/chat_service.py
+```
+
+The service is independent of HTTP or any messaging platform.
+
+It accepts:
+
+```text
+message
+role
+session_id
+history_limit
+```
+
+It then:
+
+```text
+validates input
+  ↓
+loads the configured provider
+  ↓
+retrieves conversation history
+  ↓
+builds contextual input
+  ↓
+builds the role-specific prompt
+  ↓
+generates a response
+  ↓
+stores the exchange
+  ↓
+returns a structured result
+```
+
+This allows the same chatbot workflow to support:
+
+- the `/chat` endpoint
+- WhatsApp webhooks
+- Telegram bots
+- website chat widgets
+- mobile applications
+- clinic front-desk tools
+
+The API layer is responsible only for receiving HTTP input, calling the service, and returning an HTTP response.
+
+## Mock WhatsApp Webhook
+
+A simplified WhatsApp-style message can be processed using:
+
+```text
+POST /webhooks/whatsapp/mock
+```
+
+Example request:
+
+```json
+{
+  "sender_phone": "+2348012345678",
+  "message": "What time does the clinic open?",
+  "message_id": "wamid.mock-001",
+  "role": "clinic_admin",
+  "history_limit": 5
+}
+```
+
+The phone number is normalized and converted into a stable session ID:
+
+```text
++2348012345678
+  ↓
+whatsapp-2348012345678
+```
+
+Messages from the same phone number therefore share conversation memory.
+
+Example first-delivery response:
+
+```json
+{
+  "status": "processed",
+  "inbound_message_id": "wamid.mock-001",
+  "session_id": "whatsapp-2348012345678",
+  "sender_phone": "+2348012345678",
+  "reply": "The clinic is open.",
+  "provider": "MockLLMProvider",
+  "stored_message_id": 8
+}
+```
+
+This endpoint is a local simulation. It does not require:
+
+- Meta WhatsApp credentials
+- Twilio
+- a public webhook URL
+- ngrok
+- a paid API
+
+## Webhook Duplicate Protection
+
+Webhook providers may retry the same delivery when a response is delayed or interrupted.
+
+Each inbound event is identified by:
+
+```text
+provider + inbound_message_id
+```
+
+The database enforces uniqueness using:
+
+```sql
+UNIQUE(provider, inbound_message_id)
+```
+
+First delivery:
+
+```text
+No stored event found
+  ↓
+Chat service processes the message
+  ↓
+Conversation exchange is saved
+  ↓
+Webhook result is stored
+  ↓
+status = processed
+```
+
+Duplicate delivery:
+
+```text
+Stored event found
+  ↓
+Original reply is returned
+  ↓
+Chat service is not called
+  ↓
+No duplicate conversation message is created
+  ↓
+status = duplicate
+```
+
+Example duplicate response:
+
+```json
+{
+  "status": "duplicate",
+  "inbound_message_id": "wamid.mock-001",
+  "session_id": "whatsapp-2348012345678",
+  "sender_phone": "+2348012345678",
+  "reply": "The clinic is open.",
+  "provider": "MockLLMProvider",
+  "stored_message_id": 8
+}
+```
+
 ## Current Architecture
 
 ```text
@@ -681,6 +847,44 @@ Pydantic validates the pagination metadata and messages
 FastAPI returns total, limit, offset, message count, and page data
 ```
 
+### Request flow for chat-service processing
+
+```text
+HTTP endpoint or messaging adapter receives a message
+  ↓
+Reusable chat service validates transport-neutral input
+  ↓
+Conversation history is retrieved
+  ↓
+Context and role-specific prompt are built
+  ↓
+Configured AI provider generates a response
+  ↓
+Exchange is saved in SQLite
+  ↓
+Structured service result is returned to the adapter
+```
+
+### Request flow for mock WhatsApp webhook
+
+```text
+Client sends simplified WhatsApp payload
+  ↓
+FastAPI validates phone, message, message ID, role, and history limit
+  ↓
+Webhook-event storage checks provider and message ID
+  ↓
+If duplicate, stored result is returned
+  ↓
+If new, phone number becomes a stable session ID
+  ↓
+Reusable chat service processes and stores the message
+  ↓
+Webhook event and generated result are stored
+  ↓
+API returns status processed
+```
+
 ### Main application files
 
 - `app/api.py` — FastAPI application, routes, HTTP errors, and middleware registration
@@ -711,6 +915,14 @@ FastAPI returns total, limit, offset, message count, and page data
 - `app/message_pagination.py` — message counting, validation, and paginated retrieval for individual sessions
 - `tests/test_message_pagination.py` — focused database tests for message pagination
 - `tests/test_message_pagination_api.py` — focused endpoint tests for paginated conversation retrieval
+- `app/chat_service.py` — reusable transport-independent chatbot workflow
+- `app/whatsapp.py` — phone normalization and WhatsApp session-ID generation
+- `app/webhook_events.py` — webhook-event storage, lookup, migration, and duplicate protection
+- `tests/test_chat_service.py` — focused reusable-service tests
+- `tests/test_chat_service_api.py` — tests for API-to-service integration
+- `tests/test_whatsapp.py` — WhatsApp utility tests
+- `tests/test_whatsapp_webhook.py` — webhook routing and duplicate-delivery tests
+- `tests/test_webhook_events.py` — webhook-event storage and uniqueness tests
 
 ### Current API endpoints
 
@@ -718,7 +930,8 @@ FastAPI returns total, limit, offset, message count, and page data
 |---|---|---|---|
 | `GET` | `/` | System | Returns API information and useful paths |
 | `GET` | `/health` | System | Reports whether the API is running |
-| `POST` | `/chat` | Chat | Generates and saves a role-specific response |
+| `POST` | `/chat` | Chat | Processes a message through the reusable chat service |
+| `POST` | `/webhooks/whatsapp/mock` | WhatsApp | Processes a local WhatsApp-style webhook with duplicate protection |
 | `GET` | `/conversations` | Conversations | Lists, searches and paginates conversation summaries |
 | `GET` | `/conversations/{session_id}` | Conversations | Retrieves paginated messages from one conversation |
 | `DELETE` | `/conversations/{session_id}` | Conversations | Deletes all messages in a conversation |

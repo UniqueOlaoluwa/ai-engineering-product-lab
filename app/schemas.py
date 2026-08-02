@@ -64,6 +64,59 @@ class ChatResponse(BaseModel):
     provider: str
 
 
+class WhatsAppWebhookRequest(BaseModel):
+    """Represent a simplified incoming WhatsApp-style message."""
+
+    sender_phone: str = Field(
+        min_length=7,
+        max_length=20,
+        pattern=r"^\+?[0-9]+$",
+        description=(
+            "The sender's phone number using digits and an optional "
+            "leading plus sign."
+        ),
+        examples=["+2348012345678"],
+    )
+    message: str = Field(
+        min_length=1,
+        max_length=2000,
+        description="The incoming WhatsApp text message.",
+        examples=["What time does the clinic open?"],
+    )
+    message_id: str = Field(
+        min_length=1,
+        max_length=150,
+        description="A provider-generated unique message identifier.",
+        examples=["wamid.mock-001"],
+    )
+    role: str = Field(
+        default="support",
+        min_length=1,
+        max_length=100,
+        description="The assistant role used to answer the message.",
+        examples=["clinic_admin"],
+    )
+    history_limit: int = Field(
+        default=5,
+        ge=0,
+        le=20,
+        description="The number of recent exchanges used as memory.",
+        examples=[5],
+    )
+
+
+class WhatsAppWebhookResponse(BaseModel):
+    """Define the mock WhatsApp webhook response."""
+
+    status: str
+    inbound_message_id: str
+    session_id: str
+    sender_phone: str
+    reply: str
+    provider: str
+    stored_message_id: int
+
+
 class HealthResponse(BaseModel):
     """Define the health-check response."""
 

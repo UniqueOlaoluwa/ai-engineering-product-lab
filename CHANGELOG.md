@@ -2,6 +2,39 @@
 
 All notable changes to the AI Engineering Product Lab are documented here.
 
+## [0.14.0] — 2026-08-02
+
+### Added
+
+- Reusable chatbot application service
+- Transport-independent chat-processing workflow
+- Mock WhatsApp webhook endpoint
+- WhatsApp payload request and response models
+- Phone-number normalization
+- Stable phone-based conversation session IDs
+- Webhook-event SQLite storage
+- Duplicate-message detection
+- Stored-response replay for duplicate webhook deliveries
+- Webhook-event lookup index
+- Focused service, WhatsApp, webhook, and idempotency tests
+
+### Changed
+
+- Updated the API version to `0.14.0`
+- Refactored `/chat` to use the reusable chat service
+- Updated application startup to initialize webhook storage
+- Added a lightweight migration for the webhook response-provider column
+- Expanded API architecture for future messaging integrations
+
+### Validation and Safety
+
+- Invalid phone numbers return structured `422` responses
+- Empty webhook messages and missing message IDs are rejected
+- Duplicate webhook messages do not call the AI service again
+- Duplicate webhook messages do not create repeated conversation records
+- Webhook provider and message ID form a unique database key
+- SQL queries remain parameterized
+
 ## [0.12.0] — 2026-07-31
 
 ### Added

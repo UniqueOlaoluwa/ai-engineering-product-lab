@@ -55,6 +55,31 @@ def initialize_database() -> None:
             """
         )
 
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS webhook_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                provider TEXT NOT NULL,
+                inbound_message_id TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                stored_message_id INTEGER NOT NULL,
+                reply TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(provider, inbound_message_id)
+            )
+            """
+        )
+
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_webhook_events_lookup
+            ON webhook_events (
+                provider,
+                inbound_message_id
+            )
+            """
+        )
+
         connection.commit()
 
 

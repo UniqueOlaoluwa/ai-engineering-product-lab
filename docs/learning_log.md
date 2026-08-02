@@ -677,3 +677,44 @@ Automated API tests should also use isolated databases so repeated tests do not 
 A conversation may contain many stored exchanges.
 
 Returning only the requested page reduces response size, database work, and memory usage while still reporting the total number of stored messages.
+
+---
+
+## Day 21 — Reusable Chat Service and Mock WhatsApp Webhook
+
+### What I built
+
+- Moved chatbot processing into a reusable service layer
+- Added `app/chat_service.py`
+- Refactored `/chat` to use the chat service
+- Added a mock WhatsApp webhook endpoint
+- Added WhatsApp-style payload validation
+- Added phone-number normalization
+- Created stable WhatsApp session IDs from phone numbers
+- Added webhook-event storage
+- Added duplicate-message protection
+- Returned stored responses for duplicate webhook deliveries
+- Prevented duplicate messages from calling the AI service twice
+- Added a lightweight SQLite migration for webhook metadata
+- Added focused service, webhook, and idempotency tests
+- Updated the application version to `0.14.0`
+
+### Concepts practised
+
+- Service-layer architecture
+- Transport-independent business logic
+- Webhook processing
+- Idempotency
+- Duplicate-event detection
+- SQLite unique constraints
+- Lightweight database migration
+- Stable session mapping
+- Dependency mocking
+- Structured error translation
+- Resource-aware testing
+
+### Key lesson
+
+Webhook providers may deliver the same event more than once.
+
+A production-ready webhook must use the provider message ID to detect duplicates and return the original result without processing or saving the message again.

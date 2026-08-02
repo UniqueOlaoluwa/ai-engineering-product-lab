@@ -3,18 +3,15 @@
 from fastapi import FastAPI, HTTPException, Query, status
 from fastapi.exceptions import RequestValidationError
 
-from app.config import load_settings
-from app.conversation_context import build_contextual_message
+from app.chat_service import process_chat_message
 from app.database import (
     DEFAULT_CONVERSATION_LIMIT,
     MAX_CONVERSATION_LIMIT,
     MAX_CONVERSATION_SEARCH_LENGTH,
     count_conversation_sessions,
     delete_messages_by_session,
-    get_messages_by_session,
     initialize_database,
     list_conversation_sessions,
-    save_message,
 )
 from app.error_handlers import (
     http_exception_handler,
@@ -28,8 +25,6 @@ from app.message_pagination import (
     get_messages_by_session_page,
 )
 from app.middleware import request_logging_middleware
-from app.prompt_builder import build_prompt, get_role_name, normalize_role
-from app.providers.factory import create_provider
 from app.schemas import (
     ChatRequest,
     ChatResponse,
@@ -40,9 +35,17 @@ from app.schemas import (
     HealthResponse,
     RootResponse,
     StoredMessage,
+    WhatsAppWebhookRequest,
+    WhatsAppWebhookResponse,
 )
+from app.webhook_events import (
+    get_webhook_event,
+    initialize_webhook_events_table,
+    save_webhook_event,
+)
+from app.whatsapp import build_whatsapp_session_id
 
-API_VERSION = "0.12.0"
+API_VERSION = "0.14.0"
 APPLICATION_NAME = "AI Engineering Product Lab"
 
 app = FastAPI(
@@ -75,6 +78,7 @@ app.add_exception_handler(
 )
 
 initialize_database()
+initialize_webhook_events_table()
 
 
 @app.get(
@@ -119,46 +123,101 @@ def health_check() -> HealthResponse:
     summary="Generate and store a conversation-aware response",
 )
 def chat(request: ChatRequest) -> ChatResponse:
-    """Generate a response using configurable conversation history."""
+    """Process a chatbot message through the reusable service."""
     try:
-        settings = load_settings()
-        provider = create_provider(settings)
-
-        selected_role = normalize_role(request.role)
-
-        previous_messages = get_messages_by_session(
-            request.session_id
-        )
-
-        contextual_message = build_contextual_message(
-            current_message=request.message,
-            previous_messages=previous_messages,
-            limit=request.history_limit,
-        )
-
-        prompt = build_prompt(
-            contextual_message,
-            selected_role,
-        )
-
-        reply = provider.generate(prompt)
-        provider_name = type(provider).__name__
-
-        message_id = save_message(
+        result = process_chat_message(
+            message=request.message,
+            role=request.role,
             session_id=request.session_id,
-            role=selected_role,
-            user_message=request.message,
-            assistant_reply=reply,
-            provider=provider_name,
+            history_limit=request.history_limit,
         )
 
         return ChatResponse(
-            message_id=message_id,
-            session_id=request.session_id,
-            role=selected_role,
-            role_name=get_role_name(selected_role),
-            reply=reply,
-            provider=provider_name,
+            message_id=result.message_id,
+            session_id=result.session_id,
+            role=result.role,
+            role_name=result.role_name,
+            reply=result.reply,
+            provider=result.provider,
+        )
+
+    except PromptTemplateError as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Prompt configuration error: {error}",
+        ) from error
+
+    except ProviderError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"AI provider error: {error}",
+        ) from error
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
+
+
+@app.post(
+    "/webhooks/whatsapp/mock",
+    response_model=WhatsAppWebhookResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["WhatsApp"],
+    summary="Process a mock incoming WhatsApp message",
+)
+def mock_whatsapp_webhook(
+    request: WhatsAppWebhookRequest,
+) -> WhatsAppWebhookResponse:
+    """Process a WhatsApp message once and safely handle retries."""
+    try:
+        existing_event = get_webhook_event(
+            provider="whatsapp",
+            inbound_message_id=request.message_id,
+        )
+
+        if existing_event is not None:
+            return WhatsAppWebhookResponse(
+                status="duplicate",
+                inbound_message_id=request.message_id,
+                session_id=existing_event["session_id"],
+                sender_phone=request.sender_phone,
+                reply=existing_event["reply"],
+                provider=existing_event["response_provider"],
+                stored_message_id=existing_event[
+                    "stored_message_id"
+                ],
+            )
+
+        session_id = build_whatsapp_session_id(
+            request.sender_phone
+        )
+
+        result = process_chat_message(
+            message=request.message,
+            role=request.role,
+            session_id=session_id,
+            history_limit=request.history_limit,
+        )
+
+        save_webhook_event(
+            provider="whatsapp",
+            inbound_message_id=request.message_id,
+            session_id=result.session_id,
+            stored_message_id=result.message_id,
+            reply=result.reply,
+            response_provider=result.provider,
+        )
+
+        return WhatsAppWebhookResponse(
+            status="processed",
+            inbound_message_id=request.message_id,
+            session_id=result.session_id,
+            sender_phone=request.sender_phone,
+            reply=result.reply,
+            provider=result.provider,
+            stored_message_id=result.message_id,
         )
 
     except PromptTemplateError as error:
