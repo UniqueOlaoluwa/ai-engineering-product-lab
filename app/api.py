@@ -1,7 +1,19 @@
 """FastAPI application for the AI Engineering Product Lab."""
 
-from fastapi import FastAPI, HTTPException, Query, status
+import json
+from json import JSONDecodeError
+
+from fastapi import (
+    FastAPI,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    status,
+)
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import PlainTextResponse
+from pydantic import ValidationError
 
 from app.chat_service import process_chat_message
 from app.database import (
@@ -44,8 +56,20 @@ from app.webhook_events import (
     save_webhook_event,
 )
 from app.whatsapp import build_whatsapp_session_id
+from app.whatsapp_signature import (
+    WhatsAppSignatureConfigurationError,
+    WhatsAppSignatureError,
+    get_configured_meta_app_secret,
+    verify_whatsapp_signature,
+)
+from app.whatsapp_verification import (
+    WhatsAppVerificationConfigurationError,
+    WhatsAppVerificationError,
+    get_configured_whatsapp_verify_token,
+    verify_whatsapp_webhook,
+)
 
-API_VERSION = "0.14.0"
+API_VERSION = "0.15.0"
 APPLICATION_NAME = "AI Engineering Product Lab"
 
 app = FastAPI(
@@ -79,6 +103,59 @@ app.add_exception_handler(
 
 initialize_database()
 initialize_webhook_events_table()
+
+
+def process_whatsapp_request(
+    request: WhatsAppWebhookRequest,
+) -> WhatsAppWebhookResponse:
+    """Process one validated WhatsApp-style request idempotently."""
+    existing_event = get_webhook_event(
+        provider="whatsapp",
+        inbound_message_id=request.message_id,
+    )
+
+    if existing_event is not None:
+        return WhatsAppWebhookResponse(
+            status="duplicate",
+            inbound_message_id=request.message_id,
+            session_id=existing_event["session_id"],
+            sender_phone=request.sender_phone,
+            reply=existing_event["reply"],
+            provider=existing_event["response_provider"],
+            stored_message_id=existing_event[
+                "stored_message_id"
+            ],
+        )
+
+    session_id = build_whatsapp_session_id(
+        request.sender_phone
+    )
+
+    result = process_chat_message(
+        message=request.message,
+        role=request.role,
+        session_id=session_id,
+        history_limit=request.history_limit,
+    )
+
+    save_webhook_event(
+        provider="whatsapp",
+        inbound_message_id=request.message_id,
+        session_id=result.session_id,
+        stored_message_id=result.message_id,
+        reply=result.reply,
+        response_provider=result.provider,
+    )
+
+    return WhatsAppWebhookResponse(
+        status="processed",
+        inbound_message_id=request.message_id,
+        session_id=result.session_id,
+        sender_phone=request.sender_phone,
+        reply=result.reply,
+        provider=result.provider,
+        stored_message_id=result.message_id,
+    )
 
 
 @app.get(
@@ -160,6 +237,61 @@ def chat(request: ChatRequest) -> ChatResponse:
         ) from error
 
 
+@app.get(
+    "/webhooks/whatsapp",
+    response_class=PlainTextResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["WhatsApp"],
+    summary="Verify a WhatsApp webhook subscription",
+)
+def verify_whatsapp_webhook_endpoint(
+    mode: str | None = Query(
+        default=None,
+        alias="hub.mode",
+        description="Webhook subscription mode.",
+    ),
+    verify_token: str | None = Query(
+        default=None,
+        alias="hub.verify_token",
+        description="Incoming verification token.",
+    ),
+    challenge: str | None = Query(
+        default=None,
+        alias="hub.challenge",
+        description="Challenge returned after successful verification.",
+    ),
+) -> PlainTextResponse:
+    """Validate a WhatsApp webhook-verification request."""
+    try:
+        expected_token = (
+            get_configured_whatsapp_verify_token()
+        )
+
+        verified_challenge = verify_whatsapp_webhook(
+            mode=mode,
+            verify_token=verify_token,
+            challenge=challenge,
+            expected_token=expected_token,
+        )
+
+        return PlainTextResponse(
+            content=verified_challenge,
+            status_code=status.HTTP_200_OK,
+        )
+
+    except WhatsAppVerificationConfigurationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(error),
+        ) from error
+
+    except WhatsAppVerificationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(error),
+        ) from error
+
+
 @app.post(
     "/webhooks/whatsapp/mock",
     response_model=WhatsAppWebhookResponse,
@@ -170,55 +302,97 @@ def chat(request: ChatRequest) -> ChatResponse:
 def mock_whatsapp_webhook(
     request: WhatsAppWebhookRequest,
 ) -> WhatsAppWebhookResponse:
-    """Process a WhatsApp message once and safely handle retries."""
+    """Process an unsigned local-development WhatsApp message."""
     try:
-        existing_event = get_webhook_event(
-            provider="whatsapp",
-            inbound_message_id=request.message_id,
+        return process_whatsapp_request(request)
+
+    except PromptTemplateError as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Prompt configuration error: {error}",
+        ) from error
+
+    except ProviderError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"AI provider error: {error}",
+        ) from error
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
+
+
+@app.post(
+    "/webhooks/whatsapp/signed",
+    response_model=WhatsAppWebhookResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["WhatsApp"],
+    summary="Process a signature-authenticated WhatsApp message",
+)
+async def signed_whatsapp_webhook(
+    request: Request,
+    signature_header: str | None = Header(
+        default=None,
+        alias="X-Hub-Signature-256",
+        description="HMAC-SHA256 signature of the raw request body.",
+    ),
+) -> WhatsAppWebhookResponse:
+    """Authenticate raw request bytes before parsing the payload."""
+    raw_payload = await request.body()
+
+    try:
+        app_secret = get_configured_meta_app_secret()
+
+        verify_whatsapp_signature(
+            payload=raw_payload,
+            signature_header=signature_header,
+            app_secret=app_secret,
         )
 
-        if existing_event is not None:
-            return WhatsAppWebhookResponse(
-                status="duplicate",
-                inbound_message_id=request.message_id,
-                session_id=existing_event["session_id"],
-                sender_phone=request.sender_phone,
-                reply=existing_event["reply"],
-                provider=existing_event["response_provider"],
-                stored_message_id=existing_event[
-                    "stored_message_id"
-                ],
+        try:
+            decoded_payload = json.loads(raw_payload)
+        except (
+            JSONDecodeError,
+            UnicodeDecodeError,
+        ) as error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Webhook payload must be valid JSON.",
+            ) from error
+
+        try:
+            validated_payload = (
+                WhatsAppWebhookRequest.model_validate(
+                    decoded_payload
+                )
             )
+        except ValidationError as error:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Webhook payload validation failed.",
+            ) from error
 
-        session_id = build_whatsapp_session_id(
-            request.sender_phone
+        return process_whatsapp_request(
+            validated_payload
         )
 
-        result = process_chat_message(
-            message=request.message,
-            role=request.role,
-            session_id=session_id,
-            history_limit=request.history_limit,
-        )
+    except HTTPException:
+        raise
 
-        save_webhook_event(
-            provider="whatsapp",
-            inbound_message_id=request.message_id,
-            session_id=result.session_id,
-            stored_message_id=result.message_id,
-            reply=result.reply,
-            response_provider=result.provider,
-        )
+    except WhatsAppSignatureConfigurationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(error),
+        ) from error
 
-        return WhatsAppWebhookResponse(
-            status="processed",
-            inbound_message_id=request.message_id,
-            session_id=result.session_id,
-            sender_phone=request.sender_phone,
-            reply=result.reply,
-            provider=result.provider,
-            stored_message_id=result.message_id,
-        )
+    except WhatsAppSignatureError as error:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(error),
+        ) from error
 
     except PromptTemplateError as error:
         raise HTTPException(

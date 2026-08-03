@@ -108,6 +108,12 @@ The current command-line application:
 - protects webhook processing against duplicate deliveries
 - returns stored results without calling the AI twice
 - stores webhook event metadata in SQLite
+- verifies WhatsApp webhook callback subscriptions
+- reads webhook verification secrets from private environment configuration
+- authenticates incoming webhook payloads with HMAC-SHA256
+- verifies raw request bytes before parsing JSON
+- rejects missing, malformed, modified, or incorrectly signed payloads
+- processes authenticated webhook deliveries idempotently
 
 ## API Discovery
 
@@ -503,6 +509,112 @@ This allows the same chatbot workflow to support:
 
 The API layer is responsible only for receiving HTTP input, calling the service, and returning an HTTP response.
 
+## WhatsApp Webhook Verification
+
+The verification endpoint is:
+
+```text
+GET /webhooks/whatsapp
+```
+
+It accepts Meta-style query parameters:
+
+```text
+hub.mode
+hub.verify_token
+hub.challenge
+```
+
+Example verification request:
+
+```text
+GET /webhooks/whatsapp
+    ?hub.mode=subscribe
+    &hub.verify_token=<private-token>
+    &hub.challenge=123456789
+```
+
+When the token is valid, the endpoint returns the challenge as plain text:
+
+```text
+123456789
+```
+
+Invalid modes or tokens return `403 Forbidden`.
+
+The private verification token is configured using:
+
+```env
+WHATSAPP_VERIFY_TOKEN=<private-value>
+```
+
+The real token belongs only in `.env` or a deployment-secret manager. It must not be committed to GitHub.
+
+## Signature-Authenticated WhatsApp Webhook
+
+The authenticated local endpoint is:
+
+```text
+POST /webhooks/whatsapp/signed
+```
+
+The client sends:
+
+```text
+X-Hub-Signature-256: sha256=<64-character digest>
+```
+
+The signature is generated from:
+
+```text
+HMAC-SHA256(
+    application secret,
+    exact raw request body
+)
+```
+
+Processing order:
+
+```text
+Receive exact request bytes
+  ↓
+Load the private application secret
+  ↓
+Verify X-Hub-Signature-256
+  ↓
+Reject missing or invalid signatures
+  ↓
+Parse JSON only after authentication succeeds
+  ↓
+Validate the payload schema
+  ↓
+Check duplicate message ID
+  ↓
+Process new messages through the chat service
+```
+
+The application secret is configured using:
+
+```env
+META_APP_SECRET=<private-value>
+```
+
+A request is rejected when:
+
+- the signature header is missing
+- the signature has an invalid format
+- the request body was modified
+- the request was signed with another secret
+- the application secret is not configured
+- the authenticated body is not valid JSON
+- the authenticated JSON fails payload validation
+
+The unsigned mock endpoint remains available only for local development:
+
+```text
+POST /webhooks/whatsapp/mock
+```
+
 ## Mock WhatsApp Webhook
 
 A simplified WhatsApp-style message can be processed using:
@@ -884,6 +996,45 @@ Webhook event and generated result are stored
   ↓
 API returns status processed
 ```
+### WhatsApp callback-verification flow
+
+```text
+Meta-style verification request
+  ↓
+Application reads hub.mode, hub.verify_token, and hub.challenge
+  ↓
+Private verification token is loaded from the environment
+  ↓
+Incoming token is compared securely
+  ↓
+Valid request returns the challenge as plain text
+  ↓
+Invalid request returns 403
+```
+
+### Signed WhatsApp webhook flow
+
+```text
+Client sends raw JSON body and X-Hub-Signature-256
+  ↓
+Application reads the exact raw request bytes
+  ↓
+Private Meta application secret is loaded
+  ↓
+HMAC-SHA256 signature is verified
+  ↓
+Invalid request is rejected before JSON parsing
+  ↓
+Authenticated bytes are parsed as JSON
+  ↓
+Payload is validated
+  ↓
+Duplicate-event storage is checked
+  ↓
+New message is processed through the reusable chat service
+  ↓
+Conversation and webhook result are stored
+```
 
 ### Main application files
 
@@ -923,6 +1074,12 @@ API returns status processed
 - `tests/test_whatsapp.py` — WhatsApp utility tests
 - `tests/test_whatsapp_webhook.py` — webhook routing and duplicate-delivery tests
 - `tests/test_webhook_events.py` — webhook-event storage and uniqueness tests
+- `app/whatsapp_verification.py` — callback-verification token loading and validation
+- `app/whatsapp_signature.py` — HMAC-SHA256 signature generation and verification
+- `tests/test_whatsapp_verification.py` — callback-verification utility tests
+- `tests/test_whatsapp_verification_api.py` — callback-verification endpoint tests
+- `tests/test_whatsapp_signature.py` — signature generation, validation, and tamper-detection tests
+- `tests/test_whatsapp_signature_api.py` — authenticated signed-webhook endpoint tests
 
 ### Current API endpoints
 
@@ -935,6 +1092,9 @@ API returns status processed
 | `GET` | `/conversations` | Conversations | Lists, searches and paginates conversation summaries |
 | `GET` | `/conversations/{session_id}` | Conversations | Retrieves paginated messages from one conversation |
 | `DELETE` | `/conversations/{session_id}` | Conversations | Deletes all messages in a conversation |
+| `GET` | `/webhooks/whatsapp` | WhatsApp | Verifies a WhatsApp webhook subscription and returns the challenge |
+| `POST` | `/webhooks/whatsapp/mock` | WhatsApp | Processes an unsigned local-development WhatsApp payload |
+| `POST` | `/webhooks/whatsapp/signed` | WhatsApp | Authenticates and processes an HMAC-SHA256-signed webhook payload |
 
 ### Current storage
 

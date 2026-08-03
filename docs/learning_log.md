@@ -718,3 +718,45 @@ Returning only the requested page reduces response size, database work, and memo
 Webhook providers may deliver the same event more than once.
 
 A production-ready webhook must use the provider message ID to detect duplicates and return the original result without processing or saving the message again.
+
+---
+
+## Day 22 — WhatsApp Webhook Verification and Signature Security
+
+### What I built
+
+- Added WhatsApp webhook callback verification
+- Added `GET /webhooks/whatsapp`
+- Added support for Meta-style query parameters
+- Added private webhook verification-token configuration
+- Added constant-time token comparison
+- Added HMAC-SHA256 request-signature generation
+- Added incoming webhook-signature verification
+- Added `POST /webhooks/whatsapp/signed`
+- Verified raw request bytes before parsing JSON
+- Rejected modified or incorrectly signed payloads
+- Reused existing duplicate-message protection
+- Added focused unit and API tests
+- Updated the application version to `0.15.0`
+
+### Concepts practised
+
+- Webhook callback verification
+- Environment-secret management
+- Constant-time comparison
+- HMAC-SHA256 authentication
+- Raw-body request verification
+- Request tamper detection
+- Secure parsing order
+- Plain-text HTTP responses
+- Query aliases
+- Authenticated idempotent webhook processing
+- Resource-aware testing
+
+### Key lesson
+
+Webhook verification and webhook request authentication solve different problems.
+
+The callback verification token proves that the webhook endpoint belongs to the application owner.
+
+The HMAC signature proves that an incoming webhook payload was signed with the application secret and was not modified after signing.

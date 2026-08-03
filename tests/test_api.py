@@ -40,7 +40,7 @@ def test_root_endpoint_returns_api_information() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "application": "AI Engineering Product Lab",
-        "version": "0.14.0",
+        "version": "0.15.0",
         "status": "running",
         "documentation": "/docs",
         "health": "/health",
@@ -56,7 +56,7 @@ def test_health_endpoint_returns_ok() -> None:
     assert response.json() == {
         "status": "ok",
         "application": "AI Engineering Product Lab",
-        "version": "0.14.0",
+        "version": "0.15.0",
     }
 
 
@@ -829,5 +829,6 @@ def test_get_conversation_returns_404_for_unknown_session() -> None:
         "request_id": request_id,
     }
     assert response.headers["X-Request-ID"] == request_id
+
 
 

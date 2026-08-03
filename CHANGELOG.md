@@ -2,6 +2,41 @@
 
 All notable changes to the AI Engineering Product Lab are documented here.
 
+## [0.15.0] — 2026-08-04
+
+### Added
+
+- WhatsApp webhook callback-verification endpoint
+- Meta-style `hub.mode`, `hub.verify_token`, and `hub.challenge` support
+- Private verification-token environment configuration
+- WhatsApp verification utility and custom exceptions
+- HMAC-SHA256 webhook-signature generation
+- Raw-body request-signature validation
+- Signature-authenticated WhatsApp webhook endpoint
+- Missing-signature and invalid-signature rejection
+- Modified-payload detection
+- Signed-payload JSON and schema validation
+- Focused callback-verification and signature-authentication tests
+
+### Changed
+
+- Updated the API version to `0.15.0`
+- Centralized WhatsApp message processing in a shared helper
+- Updated the mock webhook to reuse the shared WhatsApp-processing flow
+- Updated the signed webhook to reuse existing duplicate-event protection
+- Replaced the deprecated `HTTP_422_UNPROCESSABLE_ENTITY` constant
+
+### Security
+
+- Verification tokens are loaded from private environment configuration
+- Meta application secrets are loaded from private environment configuration
+- Incoming verification tokens use constant-time comparison
+- Incoming webhook signatures use HMAC-SHA256
+- Signatures are verified against the exact raw request body
+- JSON parsing occurs only after signature authentication succeeds
+- Modified or incorrectly signed payloads are rejected
+- Private secrets are excluded from `.env.example` and Git history
+
 ## [0.14.0] — 2026-08-02
 
 ### Added
