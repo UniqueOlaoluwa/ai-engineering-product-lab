@@ -2,6 +2,43 @@
 
 All notable changes to the AI Engineering Product Lab are documented here.
 
+## [0.18.0] — 2026-08-04
+
+### Added
+
+- SQLite outbound-delivery persistence
+- Pending, sent, and retry-pending delivery states
+- Unique outbound records by provider and inbound message ID
+- Delivery attempt counting
+- Delivery-provider and outbound-message metadata storage
+- Persistent delivery-error storage
+- Persisted outbound-delivery service
+- Individual delivery retry service
+- Batch retry service
+- Retry-pending delivery listing endpoint
+- Individual retry endpoint
+- Batch retry endpoint
+- Retry-list and retry-execution response models
+- Focused storage, service, and API tests
+
+### Changed
+
+- Updated the API version to `0.18.0`
+- Meta webhook replies are now stored before outbound delivery
+- Failed deliveries are now retained as `retry_pending`
+- Successful deliveries are marked `sent`
+- Existing delivery records prevent duplicate outbound sends
+- Retry operations use the stored reply instead of generating new AI output
+
+### Reliability
+
+- Failed replies survive beyond the original webhook request
+- Retry attempts increment the stored attempt count
+- Successful retries store provider and outbound message metadata
+- Failed retries remain available for later attempts
+- One failed item does not stop batch retry processing
+- Project-local SQLite test databases avoid Windows temporary-folder locks
+
 ## [0.17.0] — 2026-08-04
 
 ### Added

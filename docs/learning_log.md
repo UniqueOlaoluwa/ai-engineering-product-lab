@@ -843,3 +843,45 @@ The application should not assume that only the first entry, change, or message 
 Generating a reply and delivering a reply are separate operations.
 
 The application may successfully process and store a user message even when the external delivery provider fails. Keeping these outcomes separate makes the system easier to retry, monitor, and debug.
+
+---
+
+## Day 25 — Persistent Outbound Delivery Queue and Retry API
+
+### What I built
+
+- Added SQLite persistence for outbound WhatsApp deliveries
+- Added unique delivery records for inbound message IDs
+- Added pending, sent, and retry-pending delivery states
+- Added delivery attempt counting
+- Added delivery-provider and outbound-message metadata
+- Added persistent storage for failed delivery errors
+- Added a persisted delivery-attempt service
+- Prevented duplicate outbound records and duplicate sends
+- Added a retry service that reuses the stored reply
+- Added individual delivery retry support
+- Added batch retry support
+- Added retry-pending delivery listing
+- Added retry API endpoints
+- Connected Meta webhook delivery to persistent storage
+- Updated the application version to `0.18.0`
+
+### Concepts practised
+
+- Durable delivery queues
+- SQLite persistence
+- Idempotent outbound processing
+- Retry-state management
+- Attempt counting
+- Failure recovery
+- Stored-message replay
+- API endpoint design
+- Service-layer isolation
+- Windows-safe SQLite testing
+- Resource-aware test execution
+
+### Key lesson
+
+A failed outbound delivery should not require the AI response to be generated again.
+
+By storing the original generated reply before sending, the application can retry the exact same message safely, avoid duplicate model usage, and keep a reliable record of every attempt.

@@ -42,6 +42,23 @@ from app.meta_whatsapp_parser import (
     parse_meta_whatsapp_batch,
 )
 from app.middleware import request_logging_middleware
+from app.outbound_deliveries import (
+    DEFAULT_RETRY_LIMIT,
+    MAX_RETRY_LIMIT,
+    OutboundDeliveryStorageError,
+    initialize_outbound_deliveries_table,
+    list_retry_pending_deliveries,
+)
+from app.outbound_delivery_service import (
+    OutboundDeliveryAttemptResult,
+    persist_and_deliver_reply,
+)
+from app.outbound_retry_service import (
+    OutboundDeliveryRetryError,
+    OutboundRetryResult,
+    retry_outbound_delivery,
+    retry_pending_deliveries,
+)
 from app.schemas import (
     ChatRequest,
     ChatResponse,
@@ -52,6 +69,10 @@ from app.schemas import (
     HealthResponse,
     MetaWhatsAppBatchItemResponse,
     MetaWhatsAppBatchResponse,
+    OutboundDeliveryRecordResponse,
+    OutboundRetryBatchResponse,
+    OutboundRetryItemResponse,
+    RetryPendingDeliveryListResponse,
     RootResponse,
     StoredMessage,
     WhatsAppWebhookRequest,
@@ -63,10 +84,6 @@ from app.webhook_events import (
     save_webhook_event,
 )
 from app.whatsapp import build_whatsapp_session_id
-from app.whatsapp_delivery_service import (
-    WhatsAppReplyDelivery,
-    deliver_whatsapp_reply,
-)
 from app.whatsapp_signature import (
     WhatsAppSignatureConfigurationError,
     WhatsAppSignatureError,
@@ -80,7 +97,7 @@ from app.whatsapp_verification import (
     verify_whatsapp_webhook,
 )
 
-API_VERSION = "0.17.0"
+API_VERSION = "0.18.0"
 APPLICATION_NAME = "AI Engineering Product Lab"
 
 app = FastAPI(
@@ -114,6 +131,7 @@ app.add_exception_handler(
 
 initialize_database()
 initialize_webhook_events_table()
+initialize_outbound_deliveries_table()
 
 
 def process_whatsapp_request(
@@ -199,39 +217,64 @@ def authenticate_whatsapp_payload(
     )
 
 
-def build_batch_item(
-    result: WhatsAppWebhookResponse,
-    delivery: WhatsAppReplyDelivery | None = None,
+def build_persisted_delivery_item(
+    processing_result: WhatsAppWebhookResponse,
+    delivery_result: OutboundDeliveryAttemptResult | None,
 ) -> MetaWhatsAppBatchItemResponse:
-    """Convert processing and delivery outcomes into one batch item."""
+    """Combine processing and persisted-delivery outcomes."""
+    if delivery_result is None:
+        return MetaWhatsAppBatchItemResponse(
+            status=processing_result.status,
+            inbound_message_id=(
+                processing_result.inbound_message_id
+            ),
+            sender_phone=processing_result.sender_phone,
+            session_id=processing_result.session_id,
+            reply=processing_result.reply,
+            provider=processing_result.provider,
+            stored_message_id=(
+                processing_result.stored_message_id
+            ),
+            delivery_status="skipped",
+        )
+
     return MetaWhatsAppBatchItemResponse(
-        status=result.status,
-        inbound_message_id=result.inbound_message_id,
-        sender_phone=result.sender_phone,
-        session_id=result.session_id,
-        reply=result.reply,
-        provider=result.provider,
-        stored_message_id=result.stored_message_id,
-        delivery_status=(
-            delivery.status
-            if delivery is not None
-            else "skipped"
+        status=processing_result.status,
+        inbound_message_id=(
+            processing_result.inbound_message_id
         ),
+        sender_phone=processing_result.sender_phone,
+        session_id=processing_result.session_id,
+        reply=processing_result.reply,
+        provider=processing_result.provider,
+        stored_message_id=processing_result.stored_message_id,
+        delivery_status=delivery_result.status,
         delivery_provider=(
-            delivery.provider
-            if delivery is not None
-            else None
+            delivery_result.delivery_provider
         ),
         outbound_message_id=(
-            delivery.outbound_message_id
-            if delivery is not None
-            else None
+            delivery_result.outbound_message_id
         ),
-        delivery_error=(
-            delivery.error
-            if delivery is not None
-            else None
+        delivery_error=delivery_result.error,
+        delivery_attempt_count=(
+            delivery_result.attempt_count
         ),
+    )
+
+
+def build_retry_item_response(
+    result: OutboundRetryResult,
+) -> OutboundRetryItemResponse:
+    """Convert one retry-service result into an API model."""
+    return OutboundRetryItemResponse(
+        status=result.status,
+        inbound_message_id=result.inbound_message_id,
+        recipient_phone=result.recipient_phone,
+        message=result.message,
+        attempt_count=result.attempt_count,
+        delivery_provider=result.delivery_provider,
+        outbound_message_id=result.outbound_message_id,
+        error=result.error,
     )
 
 
@@ -240,10 +283,9 @@ def build_batch_item(
     response_model=RootResponse,
     status_code=status.HTTP_200_OK,
     tags=["System"],
-    summary="Get API information",
 )
 def root() -> RootResponse:
-    """Return basic API information and useful endpoint paths."""
+    """Return basic API information."""
     return RootResponse(
         application=APPLICATION_NAME,
         version=API_VERSION,
@@ -258,7 +300,6 @@ def root() -> RootResponse:
     response_model=HealthResponse,
     status_code=status.HTTP_200_OK,
     tags=["System"],
-    summary="Check application health",
 )
 def health_check() -> HealthResponse:
     """Return the current application health status."""
@@ -274,7 +315,6 @@ def health_check() -> HealthResponse:
     response_model=ChatResponse,
     status_code=status.HTTP_200_OK,
     tags=["Chat"],
-    summary="Generate and store a conversation-aware response",
 )
 def chat(
     request: ChatRequest,
@@ -321,7 +361,6 @@ def chat(
     response_class=PlainTextResponse,
     status_code=status.HTTP_200_OK,
     tags=["WhatsApp"],
-    summary="Verify a WhatsApp webhook subscription",
 )
 def verify_whatsapp_webhook_endpoint(
     mode: str | None = Query(
@@ -373,7 +412,6 @@ def verify_whatsapp_webhook_endpoint(
     response_model=WhatsAppWebhookResponse,
     status_code=status.HTTP_200_OK,
     tags=["WhatsApp"],
-    summary="Process an unsigned local WhatsApp message",
 )
 def mock_whatsapp_webhook(
     request: WhatsAppWebhookRequest,
@@ -406,7 +444,6 @@ def mock_whatsapp_webhook(
     response_model=WhatsAppWebhookResponse,
     status_code=status.HTTP_200_OK,
     tags=["WhatsApp"],
-    summary="Process a signed simplified WhatsApp message",
 )
 async def signed_whatsapp_webhook(
     request: Request,
@@ -485,7 +522,6 @@ async def signed_whatsapp_webhook(
     response_model=None,
     status_code=status.HTTP_200_OK,
     tags=["WhatsApp"],
-    summary="Process and deliver replies for a signed Meta batch",
 )
 async def meta_whatsapp_webhook(
     request: Request,
@@ -494,7 +530,7 @@ async def meta_whatsapp_webhook(
         alias="X-Hub-Signature-256",
     ),
 ) -> JSONResponse:
-    """Authenticate, process, and deliver replies for a Meta batch."""
+    """Authenticate and process a complete Meta webhook batch."""
     raw_payload = await request.body()
 
     try:
@@ -522,7 +558,7 @@ async def meta_whatsapp_webhook(
                 history_limit=5,
             )
         except MetaWhatsAppNoMessageError:
-            ignored_response = MetaWhatsAppBatchResponse(
+            response = MetaWhatsAppBatchResponse(
                 status="completed",
                 received=0,
                 processed=0,
@@ -538,9 +574,7 @@ async def meta_whatsapp_webhook(
 
             return JSONResponse(
                 status_code=status.HTTP_200_OK,
-                content=ignored_response.model_dump(
-                    mode="json"
-                ),
+                content=response.model_dump(mode="json"),
             )
 
         except MetaWhatsAppPayloadError as error:
@@ -559,24 +593,24 @@ async def meta_whatsapp_webhook(
         deliveries_failed = 0
         deliveries_skipped = 0
 
-        batch_items: list[
+        results: list[
             MetaWhatsAppBatchItemResponse
         ] = []
 
         for internal_request in parsed_batch.messages:
             try:
-                item_result = process_whatsapp_request(
+                processing_result = process_whatsapp_request(
                     internal_request
                 )
 
-                if item_result.status == "duplicate":
+                if processing_result.status == "duplicate":
                     duplicate_count += 1
                     deliveries_skipped += 1
 
-                    batch_items.append(
-                        build_batch_item(
-                            result=item_result,
-                            delivery=None,
+                    results.append(
+                        build_persisted_delivery_item(
+                            processing_result=processing_result,
+                            delivery_result=None,
                         )
                     )
 
@@ -584,9 +618,14 @@ async def meta_whatsapp_webhook(
 
                 processed_count += 1
 
-                delivery_result = deliver_whatsapp_reply(
-                    recipient_phone=item_result.sender_phone,
-                    message=item_result.reply,
+                delivery_result = persist_and_deliver_reply(
+                    inbound_message_id=(
+                        processing_result.inbound_message_id
+                    ),
+                    recipient_phone=(
+                        processing_result.sender_phone
+                    ),
+                    message=processing_result.reply,
                 )
 
                 if delivery_result.status == "sent":
@@ -594,10 +633,10 @@ async def meta_whatsapp_webhook(
                 else:
                     deliveries_failed += 1
 
-                batch_items.append(
-                    build_batch_item(
-                        result=item_result,
-                        delivery=delivery_result,
+                results.append(
+                    build_persisted_delivery_item(
+                        processing_result=processing_result,
+                        delivery_result=delivery_result,
                     )
                 )
 
@@ -605,11 +644,12 @@ async def meta_whatsapp_webhook(
                 PromptTemplateError,
                 ProviderError,
                 ValueError,
+                OutboundDeliveryStorageError,
             ) as error:
                 failed_count += 1
                 deliveries_skipped += 1
 
-                batch_items.append(
+                results.append(
                     MetaWhatsAppBatchItemResponse(
                         status="failed",
                         inbound_message_id=(
@@ -623,7 +663,7 @@ async def meta_whatsapp_webhook(
                     )
                 )
 
-        batch_response = MetaWhatsAppBatchResponse(
+        response = MetaWhatsAppBatchResponse(
             status="completed",
             received=len(parsed_batch.messages),
             processed=processed_count,
@@ -636,14 +676,12 @@ async def meta_whatsapp_webhook(
             deliveries_sent=deliveries_sent,
             deliveries_failed=deliveries_failed,
             deliveries_skipped=deliveries_skipped,
-            results=batch_items,
+            results=results,
         )
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,
-            content=batch_response.model_dump(
-                mode="json"
-            ),
+            content=response.model_dump(mode="json"),
         )
 
     except HTTPException:
@@ -663,11 +701,127 @@ async def meta_whatsapp_webhook(
 
 
 @app.get(
+    "/deliveries/retry-pending",
+    response_model=RetryPendingDeliveryListResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Deliveries"],
+)
+def get_retry_pending_deliveries(
+    limit: int = Query(
+        default=DEFAULT_RETRY_LIMIT,
+        ge=1,
+        le=MAX_RETRY_LIMIT,
+    ),
+) -> RetryPendingDeliveryListResponse:
+    """List outbound deliveries currently waiting for retry."""
+    try:
+        records = list_retry_pending_deliveries(
+            limit=limit
+        )
+
+        deliveries = [
+            OutboundDeliveryRecordResponse(
+                **record
+            )
+            for record in records
+        ]
+
+        return RetryPendingDeliveryListResponse(
+            total=len(deliveries),
+            limit=limit,
+            deliveries=deliveries,
+        )
+
+    except (
+        ValueError,
+        OutboundDeliveryStorageError,
+    ) as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
+
+
+@app.post(
+    "/deliveries/{inbound_message_id}/retry",
+    response_model=OutboundRetryItemResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Deliveries"],
+)
+def retry_single_delivery(
+    inbound_message_id: str,
+) -> OutboundRetryItemResponse:
+    """Retry one stored outbound delivery without regenerating AI text."""
+    try:
+        result = retry_outbound_delivery(
+            inbound_message_id=inbound_message_id
+        )
+
+        return build_retry_item_response(
+            result
+        )
+
+    except OutboundDeliveryRetryError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        ) from error
+
+    except OutboundDeliveryStorageError as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(error),
+        ) from error
+
+
+@app.post(
+    "/deliveries/retry-pending",
+    response_model=OutboundRetryBatchResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Deliveries"],
+)
+def retry_pending_delivery_batch(
+    limit: int = Query(
+        default=DEFAULT_RETRY_LIMIT,
+        ge=1,
+        le=MAX_RETRY_LIMIT,
+    ),
+) -> OutboundRetryBatchResponse:
+    """Retry a limited batch of persisted failed deliveries."""
+    try:
+        result = retry_pending_deliveries(
+            limit=limit
+        )
+
+        return OutboundRetryBatchResponse(
+            requested=result.requested,
+            attempted=result.attempted,
+            sent=result.sent,
+            failed=result.failed,
+            results=[
+                build_retry_item_response(item)
+                for item in result.results
+            ],
+        )
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        ) from error
+
+    except OutboundDeliveryStorageError as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(error),
+        ) from error
+
+
+@app.get(
     "/conversations",
     response_model=ConversationListResponse,
     status_code=status.HTTP_200_OK,
     tags=["Conversations"],
-    summary="List and search conversations",
 )
 def list_conversations(
     limit: int = Query(
@@ -727,7 +881,6 @@ def list_conversations(
     response_model=ConversationResponse,
     status_code=status.HTTP_200_OK,
     tags=["Conversations"],
-    summary="Retrieve paginated conversation history",
 )
 def get_conversation(
     session_id: str,
@@ -795,7 +948,6 @@ def get_conversation(
     response_model=ConversationDeletionResponse,
     status_code=status.HTTP_200_OK,
     tags=["Conversations"],
-    summary="Delete a stored conversation",
 )
 def delete_conversation(
     session_id: str,

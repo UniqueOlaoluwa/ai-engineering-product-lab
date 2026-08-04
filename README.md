@@ -126,6 +126,12 @@ The current command-line application:
 - skips repeated outbound delivery for duplicate inbound messages
 - preserves successful processing when delivery fails
 - reports delivery success, failure, and skipped counters
+- stores outbound WhatsApp delivery attempts in SQLite
+- records pending, sent, and retry-pending delivery states
+- tracks delivery attempt counts and provider metadata
+- retries stored replies without regenerating AI responses
+- exposes retry-list, individual-retry, and batch-retry endpoints
+- prevents duplicate delivery records for the same inbound message
 
 ## API Discovery
 
@@ -520,6 +526,91 @@ This allows the same chatbot workflow to support:
 - clinic front-desk tools
 
 The API layer is responsible only for receiving HTTP input, calling the service, and returning an HTTP response.
+
+## Persistent Outbound Delivery Queue
+
+Before a generated reply is sent, the application creates an outbound-delivery record in SQLite.
+
+Each record contains:
+
+```text
+provider
+inbound_message_id
+recipient_phone
+message
+status
+delivery_provider
+outbound_message_id
+error
+attempt_count
+created_at
+updated_at
+sent_at
+```
+
+Delivery states are:
+
+- `pending` — stored but not yet completed
+- `sent` — successfully delivered
+- `retry_pending` — failed and waiting for another attempt
+
+The combination of provider and inbound message ID is unique. This prevents the same inbound event from creating multiple outbound delivery records.
+
+## Outbound Delivery Retry
+
+Failed delivery records can be retried without calling the AI model again.
+
+The retry service:
+
+```text
+loads the stored recipient and reply
+  ↓
+checks that the record is retry_pending
+  ↓
+sends the stored reply
+  ↓
+increments attempt_count
+  ↓
+marks success as sent
+  ↓
+or keeps failure as retry_pending
+```
+
+Available endpoints:
+
+```text
+GET /deliveries/retry-pending
+POST /deliveries/{inbound_message_id}/retry
+POST /deliveries/retry-pending
+```
+
+### List retry-pending deliveries
+
+```text
+GET /deliveries/retry-pending?limit=20
+```
+
+### Retry one delivery
+
+```text
+POST /deliveries/{inbound_message_id}/retry
+```
+
+### Retry a batch
+
+```text
+POST /deliveries/retry-pending?limit=20
+```
+
+The batch retry response reports:
+
+```text
+requested
+attempted
+sent
+failed
+results
+```
 
 ## Outbound WhatsApp Sender
 
@@ -1167,6 +1258,25 @@ Limit and offset are applied
   ↓
 FastAPI returns filtered pagination metadata and summaries
 ```
+### Persistent delivery and retry flow
+
+```text
+AI reply generated
+  ↓
+Outbound delivery record created as pending
+  ↓
+Delivery attempted
+  ↓
+Success → record marked sent
+  ↓
+Failure → record marked retry_pending
+  ↓
+Retry API loads stored recipient and reply
+  ↓
+Stored reply is resent without AI regeneration
+  ↓
+Attempt count is incremented
+```
 
 ### Automated test isolation
 
@@ -1380,6 +1490,13 @@ A structured batch summary is returned
 - `tests/test_whatsapp_sender_factory.py` — sender-selection tests
 - `tests/test_whatsapp_delivery_service.py` — delivery orchestration tests
 - `tests/test_whatsapp_delivery_schemas.py` — delivery-aware response-model tests
+- `app/outbound_deliveries.py` — SQLite persistence for outbound delivery records
+- `app/outbound_delivery_service.py` — stores and attempts new outbound replies
+- `app/outbound_retry_service.py` — retries stored failed replies without AI regeneration
+- `tests/test_outbound_deliveries.py` — Windows-safe delivery-storage tests
+- `tests/test_outbound_delivery_service.py` — persisted delivery-attempt tests
+- `tests/test_outbound_retry_service.py` — individual and batch retry-service tests
+- `tests/test_outbound_retry_api.py` — retry-list and retry-execution API tests
 
 ### Current API endpoints
 
@@ -1396,6 +1513,9 @@ A structured batch summary is returned
 | `POST` | `/webhooks/whatsapp/mock` | WhatsApp | Processes an unsigned local-development WhatsApp payload |
 | `POST` | `/webhooks/whatsapp/signed` | WhatsApp | Authenticates and processes an HMAC-SHA256-signed webhook payload |
 | `POST` | `/webhooks/whatsapp/meta` | WhatsApp | Authenticates and processes Meta messages, generates replies, and sends newly processed replies through the configured outbound sender |
+| `GET` | `/deliveries/retry-pending` | Deliveries | Lists stored outbound deliveries waiting for retry |
+| `POST` | `/deliveries/{inbound_message_id}/retry` | Deliveries | Retries one stored outbound reply without regenerating it |
+| `POST` | `/deliveries/retry-pending` | Deliveries | Retries a limited batch of failed outbound deliveries |
 
 ### Current storage
 

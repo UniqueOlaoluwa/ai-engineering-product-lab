@@ -139,6 +139,7 @@ class MetaWhatsAppBatchItemResponse(BaseModel):
     delivery_provider: str | None = None
     outbound_message_id: str | None = None
     delivery_error: str | None = None
+    delivery_attempt_count: int | None = None
 
 
 class MetaWhatsAppBatchResponse(BaseModel):
@@ -157,6 +158,55 @@ class MetaWhatsAppBatchResponse(BaseModel):
     deliveries_skipped: int
 
     results: list[MetaWhatsAppBatchItemResponse]
+
+
+class OutboundDeliveryRecordResponse(BaseModel):
+    """Represent one persisted outbound-delivery record."""
+
+    id: int
+    provider: str
+    inbound_message_id: str
+    recipient_phone: str
+    message: str
+    status: str
+    delivery_provider: str | None = None
+    outbound_message_id: str | None = None
+    error: str | None = None
+    attempt_count: int
+    created_at: str
+    updated_at: str
+    sent_at: str | None = None
+
+
+class RetryPendingDeliveryListResponse(BaseModel):
+    """Represent a list of deliveries waiting for retry."""
+
+    total: int
+    limit: int
+    deliveries: list[OutboundDeliveryRecordResponse]
+
+
+class OutboundRetryItemResponse(BaseModel):
+    """Represent one outbound-delivery retry result."""
+
+    status: str
+    inbound_message_id: str
+    recipient_phone: str
+    message: str
+    attempt_count: int
+    delivery_provider: str | None = None
+    outbound_message_id: str | None = None
+    error: str | None = None
+
+
+class OutboundRetryBatchResponse(BaseModel):
+    """Represent a batch of outbound-delivery retry results."""
+
+    requested: int
+    attempted: int
+    sent: int
+    failed: int
+    results: list[OutboundRetryItemResponse]
 
 
 class HealthResponse(BaseModel):
