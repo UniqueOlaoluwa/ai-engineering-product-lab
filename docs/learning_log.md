@@ -760,3 +760,46 @@ Webhook verification and webhook request authentication solve different problems
 The callback verification token proves that the webhook endpoint belongs to the application owner.
 
 The HMAC signature proves that an incoming webhook payload was signed with the application secret and was not modified after signing.
+
+---
+
+## Day 23 — Real Meta WhatsApp Payload Parsing and Batch Processing
+
+### What I built
+
+- Added a parser for real Meta WhatsApp Cloud API webhook payloads
+- Added support for nested `entry`, `changes`, `value`, and `messages` structures
+- Converted Meta message payloads into the existing internal WhatsApp request model
+- Added support for multiple entries
+- Added support for multiple changes
+- Added support for multiple text messages in one webhook delivery
+- Added counting for ignored events
+- Added counting for unsupported message types
+- Added batch processing for signed Meta webhook deliveries
+- Added per-message processing results
+- Added duplicate counting
+- Added partial-failure isolation
+- Added batch summary responses
+- Added focused parser and API tests
+- Updated the application version to `0.16.0`
+
+### Concepts practised
+
+- Real webhook payload adaptation
+- Nested JSON traversal
+- Batch event processing
+- Multiple-entry parsing
+- Multiple-message parsing
+- Partial-failure isolation
+- Per-item result reporting
+- Duplicate-event handling
+- Unsupported event classification
+- Signed webhook processing
+- Backward-compatible adapters
+- Resource-aware testing
+
+### Key lesson
+
+A real webhook delivery may contain more than one event or message.
+
+The application should not assume that only the first entry, change, or message matters. It should safely process all supported messages, ignore non-message events, record unsupported items, and prevent one failed message from stopping the rest of the batch.

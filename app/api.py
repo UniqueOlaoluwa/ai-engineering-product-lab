@@ -12,7 +12,7 @@ from fastapi import (
     status,
 )
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import ValidationError
 
 from app.chat_service import process_chat_message
@@ -36,6 +36,11 @@ from app.message_pagination import (
     count_messages_by_session,
     get_messages_by_session_page,
 )
+from app.meta_whatsapp_parser import (
+    MetaWhatsAppNoMessageError,
+    MetaWhatsAppPayloadError,
+    parse_meta_whatsapp_batch,
+)
 from app.middleware import request_logging_middleware
 from app.schemas import (
     ChatRequest,
@@ -45,6 +50,8 @@ from app.schemas import (
     ConversationResponse,
     ConversationSummary,
     HealthResponse,
+    MetaWhatsAppBatchItemResponse,
+    MetaWhatsAppBatchResponse,
     RootResponse,
     StoredMessage,
     WhatsAppWebhookRequest,
@@ -69,7 +76,7 @@ from app.whatsapp_verification import (
     verify_whatsapp_webhook,
 )
 
-API_VERSION = "0.15.0"
+API_VERSION = "0.16.0"
 APPLICATION_NAME = "AI Engineering Product Lab"
 
 app = FastAPI(
@@ -155,6 +162,51 @@ def process_whatsapp_request(
         reply=result.reply,
         provider=result.provider,
         stored_message_id=result.message_id,
+    )
+
+
+def decode_json_payload(
+    raw_payload: bytes,
+) -> object:
+    """Decode raw webhook bytes into a JSON-compatible value."""
+    try:
+        return json.loads(raw_payload)
+    except (
+        JSONDecodeError,
+        UnicodeDecodeError,
+    ) as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Webhook payload must be valid JSON.",
+        ) from error
+
+
+def authenticate_whatsapp_payload(
+    raw_payload: bytes,
+    signature_header: str | None,
+) -> None:
+    """Authenticate exact webhook bytes using the Meta app secret."""
+    app_secret = get_configured_meta_app_secret()
+
+    verify_whatsapp_signature(
+        payload=raw_payload,
+        signature_header=signature_header,
+        app_secret=app_secret,
+    )
+
+
+def build_batch_item(
+    result: WhatsAppWebhookResponse,
+) -> MetaWhatsAppBatchItemResponse:
+    """Convert a single webhook result into a batch item."""
+    return MetaWhatsAppBatchItemResponse(
+        status=result.status,
+        inbound_message_id=result.inbound_message_id,
+        sender_phone=result.sender_phone,
+        session_id=result.session_id,
+        reply=result.reply,
+        provider=result.provider,
+        stored_message_id=result.stored_message_id,
     )
 
 
@@ -248,17 +300,14 @@ def verify_whatsapp_webhook_endpoint(
     mode: str | None = Query(
         default=None,
         alias="hub.mode",
-        description="Webhook subscription mode.",
     ),
     verify_token: str | None = Query(
         default=None,
         alias="hub.verify_token",
-        description="Incoming verification token.",
     ),
     challenge: str | None = Query(
         default=None,
         alias="hub.challenge",
-        description="Challenge returned after successful verification.",
     ),
 ) -> PlainTextResponse:
     """Validate a WhatsApp webhook-verification request."""
@@ -297,7 +346,6 @@ def verify_whatsapp_webhook_endpoint(
     response_model=WhatsAppWebhookResponse,
     status_code=status.HTTP_200_OK,
     tags=["WhatsApp"],
-    summary="Process a mock incoming WhatsApp message",
 )
 def mock_whatsapp_webhook(
     request: WhatsAppWebhookRequest,
@@ -330,38 +378,26 @@ def mock_whatsapp_webhook(
     response_model=WhatsAppWebhookResponse,
     status_code=status.HTTP_200_OK,
     tags=["WhatsApp"],
-    summary="Process a signature-authenticated WhatsApp message",
 )
 async def signed_whatsapp_webhook(
     request: Request,
     signature_header: str | None = Header(
         default=None,
         alias="X-Hub-Signature-256",
-        description="HMAC-SHA256 signature of the raw request body.",
     ),
 ) -> WhatsAppWebhookResponse:
-    """Authenticate raw request bytes before parsing the payload."""
+    """Authenticate a simplified payload before parsing it."""
     raw_payload = await request.body()
 
     try:
-        app_secret = get_configured_meta_app_secret()
-
-        verify_whatsapp_signature(
-            payload=raw_payload,
+        authenticate_whatsapp_payload(
+            raw_payload=raw_payload,
             signature_header=signature_header,
-            app_secret=app_secret,
         )
 
-        try:
-            decoded_payload = json.loads(raw_payload)
-        except (
-            JSONDecodeError,
-            UnicodeDecodeError,
-        ) as error:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Webhook payload must be valid JSON.",
-            ) from error
+        decoded_payload = decode_json_payload(
+            raw_payload
+        )
 
         try:
             validated_payload = (
@@ -371,7 +407,9 @@ async def signed_whatsapp_webhook(
             )
         except ValidationError as error:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status_code=(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT
+                ),
                 detail="Webhook payload validation failed.",
             ) from error
 
@@ -413,35 +451,174 @@ async def signed_whatsapp_webhook(
         ) from error
 
 
+@app.post(
+    "/webhooks/whatsapp/meta",
+    response_model=None,
+    status_code=status.HTTP_200_OK,
+    tags=["WhatsApp"],
+)
+async def meta_whatsapp_webhook(
+    request: Request,
+    signature_header: str | None = Header(
+        default=None,
+        alias="X-Hub-Signature-256",
+    ),
+) -> JSONResponse:
+    """Authenticate and process an entire Meta webhook batch."""
+    raw_payload = await request.body()
+
+    try:
+        authenticate_whatsapp_payload(
+            raw_payload=raw_payload,
+            signature_header=signature_header,
+        )
+
+        decoded_payload = decode_json_payload(
+            raw_payload
+        )
+
+        if not isinstance(decoded_payload, dict):
+            raise HTTPException(
+                status_code=(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT
+                ),
+                detail="Meta webhook payload must be a JSON object.",
+            )
+
+        try:
+            parsed_batch = parse_meta_whatsapp_batch(
+                decoded_payload,
+                role="support",
+                history_limit=5,
+            )
+        except MetaWhatsAppNoMessageError:
+            ignored_response = MetaWhatsAppBatchResponse(
+                status="completed",
+                received=0,
+                processed=0,
+                duplicates=0,
+                ignored=1,
+                unsupported=0,
+                failed=0,
+                results=[],
+            )
+
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content=ignored_response.model_dump(
+                    mode="json"
+                ),
+            )
+        except MetaWhatsAppPayloadError as error:
+            raise HTTPException(
+                status_code=(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT
+                ),
+                detail=str(error),
+            ) from error
+
+        processed_count = 0
+        duplicate_count = 0
+        failed_count = 0
+
+        batch_items: list[
+            MetaWhatsAppBatchItemResponse
+        ] = []
+
+        for internal_request in parsed_batch.messages:
+            try:
+                item_result = process_whatsapp_request(
+                    internal_request
+                )
+
+                batch_items.append(
+                    build_batch_item(
+                        item_result
+                    )
+                )
+
+                if item_result.status == "processed":
+                    processed_count += 1
+                elif item_result.status == "duplicate":
+                    duplicate_count += 1
+
+            except (
+                PromptTemplateError,
+                ProviderError,
+                ValueError,
+            ) as error:
+                failed_count += 1
+
+                batch_items.append(
+                    MetaWhatsAppBatchItemResponse(
+                        status="failed",
+                        inbound_message_id=(
+                            internal_request.message_id
+                        ),
+                        sender_phone=(
+                            internal_request.sender_phone
+                        ),
+                        error=str(error),
+                    )
+                )
+
+        batch_response = MetaWhatsAppBatchResponse(
+            status="completed",
+            received=len(parsed_batch.messages),
+            processed=processed_count,
+            duplicates=duplicate_count,
+            ignored=parsed_batch.ignored_events,
+            unsupported=(
+                parsed_batch.unsupported_messages
+            ),
+            failed=failed_count,
+            results=batch_items,
+        )
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content=batch_response.model_dump(
+                mode="json"
+            ),
+        )
+
+    except HTTPException:
+        raise
+
+    except WhatsAppSignatureConfigurationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(error),
+        ) from error
+
+    except WhatsAppSignatureError as error:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(error),
+        ) from error
+
+
 @app.get(
     "/conversations",
     response_model=ConversationListResponse,
     status_code=status.HTTP_200_OK,
     tags=["Conversations"],
-    summary="List and search stored conversations",
 )
 def list_conversations(
     limit: int = Query(
         default=DEFAULT_CONVERSATION_LIMIT,
         ge=1,
         le=MAX_CONVERSATION_LIMIT,
-        description="Maximum number of conversations to return.",
     ),
     offset: int = Query(
         default=0,
         ge=0,
-        description="Number of conversation summaries to skip.",
     ),
     search: str | None = Query(
         default=None,
         min_length=1,
         max_length=MAX_CONVERSATION_SEARCH_LENGTH,
         pattern=r".*\S.*",
-        description=(
-            "Optional case-insensitive partial search applied "
-            "to conversation session IDs."
-        ),
-        examples=["clinic"],
     ),
 ) -> ConversationListResponse:
     """Return paginated and optionally filtered conversations."""
@@ -485,7 +662,6 @@ def list_conversations(
     response_model=ConversationResponse,
     status_code=status.HTTP_200_OK,
     tags=["Conversations"],
-    summary="Retrieve paginated conversation history",
 )
 def get_conversation(
     session_id: str,
@@ -493,17 +669,17 @@ def get_conversation(
         default=DEFAULT_MESSAGE_LIMIT,
         ge=1,
         le=MAX_MESSAGE_LIMIT,
-        description="Maximum number of messages to return.",
     ),
     offset: int = Query(
         default=0,
         ge=0,
-        description="Number of stored messages to skip.",
     ),
 ) -> ConversationResponse:
     """Return one paginated page of exchanges for a session."""
     try:
-        total = count_messages_by_session(session_id)
+        total = count_messages_by_session(
+            session_id
+        )
 
         if total == 0:
             raise HTTPException(
@@ -553,14 +729,15 @@ def get_conversation(
     response_model=ConversationDeletionResponse,
     status_code=status.HTTP_200_OK,
     tags=["Conversations"],
-    summary="Delete a stored conversation",
 )
 def delete_conversation(
     session_id: str,
 ) -> ConversationDeletionResponse:
     """Delete all stored exchanges belonging to a session."""
     try:
-        deleted_count = delete_messages_by_session(session_id)
+        deleted_count = delete_messages_by_session(
+            session_id
+        )
 
         if deleted_count == 0:
             raise HTTPException(

@@ -26,6 +26,7 @@ class ChatRequest(BaseModel):
             "Help me reduce repetitive customer-support questions."
         ],
     )
+
     role: str = Field(
         default="support",
         min_length=1,
@@ -33,6 +34,7 @@ class ChatRequest(BaseModel):
         description="The assistant role requested by the client.",
         examples=["business"],
     )
+
     session_id: str = Field(
         default="default-session",
         min_length=1,
@@ -40,14 +42,14 @@ class ChatRequest(BaseModel):
         description="A client-generated conversation session identifier.",
         examples=["demo-session-001"],
     )
+
     history_limit: int = Field(
         default=5,
         ge=0,
         le=20,
         description=(
-            "The maximum number of recent stored exchanges included "
-            "as conversation context. Use 0 to disable memory for "
-            "the current request."
+            "Maximum number of recent stored exchanges included "
+            "as conversation context."
         ),
         examples=[5],
     )
@@ -72,41 +74,45 @@ class WhatsAppWebhookRequest(BaseModel):
         max_length=20,
         pattern=r"^\+?[0-9]+$",
         description=(
-            "The sender's phone number using digits and an optional "
+            "Sender phone number using digits and an optional "
             "leading plus sign."
         ),
         examples=["+2348012345678"],
     )
+
     message: str = Field(
         min_length=1,
         max_length=2000,
-        description="The incoming WhatsApp text message.",
+        description="Incoming WhatsApp text message.",
         examples=["What time does the clinic open?"],
     )
+
     message_id: str = Field(
         min_length=1,
         max_length=150,
-        description="A provider-generated unique message identifier.",
+        description="Provider-generated unique message identifier.",
         examples=["wamid.mock-001"],
     )
+
     role: str = Field(
         default="support",
         min_length=1,
         max_length=100,
-        description="The assistant role used to answer the message.",
+        description="Assistant role used to answer the message.",
         examples=["clinic_admin"],
     )
+
     history_limit: int = Field(
         default=5,
         ge=0,
         le=20,
-        description="The number of recent exchanges used as memory.",
+        description="Number of recent exchanges used as memory.",
         examples=[5],
     )
 
 
 class WhatsAppWebhookResponse(BaseModel):
-    """Define the mock WhatsApp webhook response."""
+    """Define the response for one WhatsApp-style message."""
 
     status: str
     inbound_message_id: str
@@ -115,6 +121,32 @@ class WhatsAppWebhookResponse(BaseModel):
     reply: str
     provider: str
     stored_message_id: int
+
+
+class MetaWhatsAppBatchItemResponse(BaseModel):
+    """Represent the outcome of processing one Meta message."""
+
+    status: str
+    inbound_message_id: str
+    sender_phone: str
+    session_id: str | None = None
+    reply: str | None = None
+    provider: str | None = None
+    stored_message_id: int | None = None
+    error: str | None = None
+
+
+class MetaWhatsAppBatchResponse(BaseModel):
+    """Summarize one complete Meta webhook batch."""
+
+    status: str
+    received: int
+    processed: int
+    duplicates: int
+    ignored: int
+    unsupported: int
+    failed: int
+    results: list[MetaWhatsAppBatchItemResponse]
 
 
 class HealthResponse(BaseModel):

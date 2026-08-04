@@ -114,6 +114,12 @@ The current command-line application:
 - verifies raw request bytes before parsing JSON
 - rejects missing, malformed, modified, or incorrectly signed payloads
 - processes authenticated webhook deliveries idempotently
+- parses real Meta WhatsApp Cloud API webhook payloads
+- supports nested entries, changes, values, and messages
+- processes multiple WhatsApp messages in one signed delivery
+- counts processed, duplicate, ignored, unsupported, and failed items
+- isolates individual message failures inside a batch
+- returns structured batch-processing summaries
 
 ## API Discovery
 
@@ -549,6 +555,127 @@ WHATSAPP_VERIFY_TOKEN=<private-value>
 ```
 
 The real token belongs only in `.env` or a deployment-secret manager. It must not be committed to GitHub.
+
+## Meta WhatsApp Payload Parsing
+
+The application can parse the nested structure used by Meta WhatsApp Cloud API webhooks.
+
+A typical payload follows this structure:
+
+```text
+object
+  ↓
+entry[]
+  ↓
+changes[]
+  ↓
+value
+  ↓
+messages[]
+```
+
+For each supported text message, the parser extracts:
+
+```text
+from
+id
+type
+text.body
+```
+
+It then converts the Meta message into the internal request format:
+
+```text
+sender_phone
+message
+message_id
+role
+history_limit
+```
+
+This keeps the core chat service independent of Meta's webhook structure.
+
+The parser supports:
+
+- multiple entries
+- multiple changes
+- multiple messages
+- ignored status events
+- unsupported message counting
+- backward-compatible first-message parsing
+
+## Meta WhatsApp Batch Processing
+
+The signed Meta endpoint is:
+
+```text
+POST /webhooks/whatsapp/meta
+```
+
+The endpoint:
+
+```text
+receives raw request bytes
+  ↓
+verifies X-Hub-Signature-256
+  ↓
+parses authenticated JSON
+  ↓
+extracts all supported text messages
+  ↓
+processes each message independently
+  ↓
+reuses duplicate-message protection
+  ↓
+returns one batch summary
+```
+
+Example summary:
+
+```json
+{
+  "status": "completed",
+  "received": 2,
+  "processed": 1,
+  "duplicates": 1,
+  "ignored": 0,
+  "unsupported": 1,
+  "failed": 0,
+  "results": [
+    {
+      "status": "processed",
+      "inbound_message_id": "wamid.example-001",
+      "sender_phone": "2348011111111",
+      "session_id": "whatsapp-2348011111111",
+      "reply": "Generated response",
+      "provider": "MockLLMProvider",
+      "stored_message_id": 10,
+      "error": null
+    },
+    {
+      "status": "duplicate",
+      "inbound_message_id": "wamid.example-002",
+      "sender_phone": "2348022222222",
+      "session_id": "whatsapp-2348022222222",
+      "reply": "Previously generated response",
+      "provider": "MockLLMProvider",
+      "stored_message_id": 11,
+      "error": null
+    }
+  ]
+}
+```
+
+Batch counters mean:
+
+- `received` — supported text messages extracted from the payload
+- `processed` — new messages processed successfully
+- `duplicates` — previously processed message IDs
+- `ignored` — status events or non-message changes
+- `unsupported` — non-text messages skipped by the parser
+- `failed` — supported messages that failed during processing
+
+A failed item does not prevent later messages in the same batch from running.
 
 ## Signature-Authenticated WhatsApp Webhook
 
@@ -1035,6 +1162,31 @@ New message is processed through the reusable chat service
   ↓
 Conversation and webhook result are stored
 ```
+### Meta WhatsApp batch flow
+
+```text
+Meta sends a signed webhook delivery
+  ↓
+Application reads the exact raw body
+  ↓
+HMAC-SHA256 signature is verified
+  ↓
+Authenticated JSON is decoded
+  ↓
+Parser traverses all entries and changes
+  ↓
+Supported text messages are extracted
+  ↓
+Ignored and unsupported events are counted
+  ↓
+Each supported message is processed independently
+  ↓
+Duplicate events return stored results
+  ↓
+Failures are recorded without stopping the batch
+  ↓
+A structured batch summary is returned
+```
 
 ### Main application files
 
@@ -1080,6 +1232,9 @@ Conversation and webhook result are stored
 - `tests/test_whatsapp_verification_api.py` — callback-verification endpoint tests
 - `tests/test_whatsapp_signature.py` — signature generation, validation, and tamper-detection tests
 - `tests/test_whatsapp_signature_api.py` — authenticated signed-webhook endpoint tests
+- `app/meta_whatsapp_parser.py` — parses real Meta WhatsApp payloads and extracts supported messages
+- `tests/test_meta_whatsapp_parser.py` — tests nested payload parsing, multiple entries, multiple changes, and unsupported messages
+- `tests/test_meta_whatsapp_api.py` — tests signed Meta webhook batch processing and partial failures
 
 ### Current API endpoints
 
@@ -1095,6 +1250,7 @@ Conversation and webhook result are stored
 | `GET` | `/webhooks/whatsapp` | WhatsApp | Verifies a WhatsApp webhook subscription and returns the challenge |
 | `POST` | `/webhooks/whatsapp/mock` | WhatsApp | Processes an unsigned local-development WhatsApp payload |
 | `POST` | `/webhooks/whatsapp/signed` | WhatsApp | Authenticates and processes an HMAC-SHA256-signed webhook payload |
+| `POST` | `/webhooks/whatsapp/meta` | WhatsApp | Authenticates, parses, and batch-processes real Meta WhatsApp webhook payloads |
 
 ### Current storage
 

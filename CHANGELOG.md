@@ -2,6 +2,41 @@
 
 All notable changes to the AI Engineering Product Lab are documented here.
 
+## [0.16.0] — 2026-08-04
+
+### Added
+
+- Real Meta WhatsApp Cloud API payload parser
+- Nested webhook entry and change traversal
+- Multiple-message extraction
+- Multiple-entry and multiple-change support
+- Ignored-event counting
+- Unsupported-message counting
+- Signed Meta webhook endpoint
+- Batch-processing response models
+- Per-message batch results
+- Duplicate counting
+- Partial-failure isolation
+- Focused Meta parser and batch API tests
+
+### Changed
+
+- Updated the API version to `0.16.0`
+- Upgraded `/webhooks/whatsapp/meta` to process all supported messages in one delivery
+- Updated Meta webhook responses from single-message output to structured batch summaries
+- Preserved existing signature verification and duplicate protection
+- Kept simplified and mock WhatsApp endpoints backward compatible
+
+### Validation and Reliability
+
+- Real Meta payloads must use the expected WhatsApp business object
+- Missing entries, changes, senders, message IDs, and text bodies are rejected
+- Status-only deliveries are acknowledged safely
+- Unsupported message types are counted without blocking text messages
+- One failed message does not stop later items in the batch
+- Invalid signatures are rejected before JSON parsing
+- Duplicate message IDs do not trigger repeated AI generation
+
 ## [0.15.0] — 2026-08-04
 
 ### Added
