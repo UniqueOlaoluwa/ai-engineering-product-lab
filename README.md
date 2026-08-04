@@ -120,6 +120,12 @@ The current command-line application:
 - counts processed, duplicate, ignored, unsupported, and failed items
 - isolates individual message failures inside a batch
 - returns structured batch-processing summaries
+- sends generated WhatsApp replies through a configurable outbound sender
+- uses a free local mock sender by default
+- validates outbound phone numbers and message bodies
+- skips repeated outbound delivery for duplicate inbound messages
+- preserves successful processing when delivery fails
+- reports delivery success, failure, and skipped counters
 
 ## API Discovery
 
@@ -514,6 +520,116 @@ This allows the same chatbot workflow to support:
 - clinic front-desk tools
 
 The API layer is responsible only for receiving HTTP input, calling the service, and returning an HTTP response.
+
+## Outbound WhatsApp Sender
+
+Generated replies are sent through a provider abstraction.
+
+The default local provider is configured with:
+
+```env
+WHATSAPP_SENDER=mock
+```
+
+The mock sender:
+
+- requires no Meta account
+- requires no access token
+- makes no network request
+- returns synthetic outbound message IDs
+- allows the full delivery workflow to be tested locally
+
+The outbound sender interface accepts:
+
+```text
+recipient_phone
+message
+```
+
+It returns:
+
+```text
+status
+recipient_phone
+provider
+outbound_message_id
+message
+```
+
+The sender validates that:
+
+- the recipient contains only digits after normalization
+- a leading plus sign may be removed
+- the recipient length is between 7 and 20 digits
+- the message is not empty
+- the message does not exceed 4096 characters
+
+## WhatsApp Reply Delivery
+
+For newly processed Meta messages, the application follows this flow:
+
+```text
+Incoming Meta message
+  ↓
+Signature verification
+  ↓
+Message parsing
+  ↓
+Duplicate-message check
+  ↓
+AI response generation
+  ↓
+Conversation and webhook result stored
+  ↓
+Reply passed to configured WhatsApp sender
+  ↓
+Delivery outcome added to the batch response
+```
+
+Delivery is skipped when:
+
+- the inbound message is a duplicate
+- message processing failed before a reply was generated
+- the payload contains no supported incoming text message
+
+A delivery failure does not change the processing result from `processed` to `failed`.
+
+This means a batch item may contain:
+
+```json
+{
+  "status": "processed",
+  "delivery_status": "failed",
+  "delivery_error": "Temporary delivery failure."
+}
+```
+
+This distinction allows the application to retry delivery later without generating a second AI response.
+
+### Delivery counters
+
+The Meta batch response now includes:
+
+```text
+deliveries_sent
+deliveries_failed
+deliveries_skipped
+```
+
+The counters mean:
+
+- `deliveries_sent` — newly processed replies successfully passed to the sender
+- `deliveries_failed` — replies generated successfully but not delivered
+- `deliveries_skipped` — duplicate messages or processing failures for which delivery was not attempted
+
+Each batch result may also include:
+
+```text
+delivery_status
+delivery_provider
+outbound_message_id
+delivery_error
+```
 
 ## WhatsApp Webhook Verification
 
@@ -1123,6 +1239,26 @@ Webhook event and generated result are stored
   ↓
 API returns status processed
 ```
+### Outbound WhatsApp delivery flow
+
+```text
+AI reply generated
+  ↓
+Inbound result stored
+  ↓
+Delivery service selects configured sender
+  ↓
+Recipient and message are validated
+  ↓
+Mock or future real provider sends the reply
+  ↓
+Success returns provider and outbound message ID
+  ↓
+Failure returns a structured delivery error
+  ↓
+Webhook batch processing continues
+```
+
 ### WhatsApp callback-verification flow
 
 ```text
@@ -1235,6 +1371,15 @@ A structured batch summary is returned
 - `app/meta_whatsapp_parser.py` — parses real Meta WhatsApp payloads and extracts supported messages
 - `tests/test_meta_whatsapp_parser.py` — tests nested payload parsing, multiple entries, multiple changes, and unsupported messages
 - `tests/test_meta_whatsapp_api.py` — tests signed Meta webhook batch processing and partial failures
+- `app/whatsapp_sender.py` — sender protocol, delivery result, and outbound validation
+- `app/mock_whatsapp_sender.py` — free local outbound-delivery simulation
+- `app/whatsapp_sender_factory.py` — environment-controlled sender selection
+- `app/whatsapp_delivery_service.py` — coordinates reply delivery and graceful failure handling
+- `tests/test_whatsapp_sender.py` — outbound recipient and message validation tests
+- `tests/test_mock_whatsapp_sender.py` — mock-provider tests
+- `tests/test_whatsapp_sender_factory.py` — sender-selection tests
+- `tests/test_whatsapp_delivery_service.py` — delivery orchestration tests
+- `tests/test_whatsapp_delivery_schemas.py` — delivery-aware response-model tests
 
 ### Current API endpoints
 
@@ -1250,7 +1395,7 @@ A structured batch summary is returned
 | `GET` | `/webhooks/whatsapp` | WhatsApp | Verifies a WhatsApp webhook subscription and returns the challenge |
 | `POST` | `/webhooks/whatsapp/mock` | WhatsApp | Processes an unsigned local-development WhatsApp payload |
 | `POST` | `/webhooks/whatsapp/signed` | WhatsApp | Authenticates and processes an HMAC-SHA256-signed webhook payload |
-| `POST` | `/webhooks/whatsapp/meta` | WhatsApp | Authenticates, parses, and batch-processes real Meta WhatsApp webhook payloads |
+| `POST` | `/webhooks/whatsapp/meta` | WhatsApp | Authenticates and processes Meta messages, generates replies, and sends newly processed replies through the configured outbound sender |
 
 ### Current storage
 

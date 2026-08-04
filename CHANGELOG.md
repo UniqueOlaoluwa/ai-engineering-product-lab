@@ -2,6 +2,39 @@
 
 All notable changes to the AI Engineering Product Lab are documented here.
 
+## [0.17.0] — 2026-08-04
+
+### Added
+
+- Outbound WhatsApp sender protocol
+- Local mock WhatsApp sender
+- Environment-controlled sender factory
+- Outbound recipient-phone validation
+- Outbound message validation
+- Structured delivery-result model
+- Reusable WhatsApp reply-delivery service
+- Delivery fields for Meta batch items
+- Delivery counters for Meta batch responses
+- Focused sender, factory, delivery-service, schema, and API tests
+
+### Changed
+
+- Updated the API version to `0.17.0`
+- Updated `/webhooks/whatsapp/meta` to deliver newly generated replies
+- Updated Meta batch responses with delivery outcomes
+- Duplicate inbound messages now skip repeated outbound delivery
+- Message-processing failures now report delivery as skipped
+- Successful processing is preserved when outbound delivery fails
+
+### Reliability
+
+- Outbound delivery failures are converted into structured results
+- Unexpected sender errors are wrapped safely
+- One failed delivery does not stop later messages in the batch
+- Duplicate messages do not trigger duplicate outbound replies
+- Delivery and AI-processing outcomes are tracked separately
+- The default sender remains a free local mock provider
+
 ## [0.16.0] — 2026-08-04
 
 ### Added

@@ -124,7 +124,7 @@ class WhatsAppWebhookResponse(BaseModel):
 
 
 class MetaWhatsAppBatchItemResponse(BaseModel):
-    """Represent the outcome of processing one Meta message."""
+    """Represent processing and delivery for one Meta message."""
 
     status: str
     inbound_message_id: str
@@ -134,6 +134,11 @@ class MetaWhatsAppBatchItemResponse(BaseModel):
     provider: str | None = None
     stored_message_id: int | None = None
     error: str | None = None
+
+    delivery_status: str | None = None
+    delivery_provider: str | None = None
+    outbound_message_id: str | None = None
+    delivery_error: str | None = None
 
 
 class MetaWhatsAppBatchResponse(BaseModel):
@@ -146,6 +151,11 @@ class MetaWhatsAppBatchResponse(BaseModel):
     ignored: int
     unsupported: int
     failed: int
+
+    deliveries_sent: int
+    deliveries_failed: int
+    deliveries_skipped: int
+
     results: list[MetaWhatsAppBatchItemResponse]
 
 

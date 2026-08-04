@@ -803,3 +803,43 @@ The HMAC signature proves that an incoming webhook payload was signed with the a
 A real webhook delivery may contain more than one event or message.
 
 The application should not assume that only the first entry, change, or message matters. It should safely process all supported messages, ignore non-message events, record unsupported items, and prevent one failed message from stopping the rest of the batch.
+
+---
+
+## Day 24 — Outbound WhatsApp Reply Delivery
+
+### What I built
+
+- Added an outbound WhatsApp sender interface
+- Added a local mock WhatsApp sender
+- Added a sender factory controlled by environment configuration
+- Added outbound phone-number validation
+- Added outbound message validation
+- Added a reusable WhatsApp reply-delivery service
+- Added structured delivery-success and delivery-failure results
+- Connected generated Meta webhook replies to outbound delivery
+- Prevented duplicate inbound messages from triggering duplicate replies
+- Preserved successful AI processing when outbound delivery fails
+- Added delivery counters to Meta webhook batch responses
+- Added per-message delivery details
+- Added focused sender, delivery-service, schema, and API tests
+- Updated the application version to `0.17.0`
+
+### Concepts practised
+
+- Provider abstraction
+- Dependency injection
+- Outbound message delivery
+- Environment-driven provider selection
+- Mock external-service integration
+- Graceful delivery failure handling
+- Duplicate-send prevention
+- Processing-versus-delivery separation
+- Delivery-aware API response design
+- Resource-aware testing
+
+### Key lesson
+
+Generating a reply and delivering a reply are separate operations.
+
+The application may successfully process and store a user message even when the external delivery provider fails. Keeping these outcomes separate makes the system easier to retry, monitor, and debug.

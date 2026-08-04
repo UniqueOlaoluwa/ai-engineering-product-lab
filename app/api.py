@@ -63,6 +63,10 @@ from app.webhook_events import (
     save_webhook_event,
 )
 from app.whatsapp import build_whatsapp_session_id
+from app.whatsapp_delivery_service import (
+    WhatsAppReplyDelivery,
+    deliver_whatsapp_reply,
+)
 from app.whatsapp_signature import (
     WhatsAppSignatureConfigurationError,
     WhatsAppSignatureError,
@@ -76,7 +80,7 @@ from app.whatsapp_verification import (
     verify_whatsapp_webhook,
 )
 
-API_VERSION = "0.16.0"
+API_VERSION = "0.17.0"
 APPLICATION_NAME = "AI Engineering Product Lab"
 
 app = FastAPI(
@@ -197,8 +201,9 @@ def authenticate_whatsapp_payload(
 
 def build_batch_item(
     result: WhatsAppWebhookResponse,
+    delivery: WhatsAppReplyDelivery | None = None,
 ) -> MetaWhatsAppBatchItemResponse:
-    """Convert a single webhook result into a batch item."""
+    """Convert processing and delivery outcomes into one batch item."""
     return MetaWhatsAppBatchItemResponse(
         status=result.status,
         inbound_message_id=result.inbound_message_id,
@@ -207,6 +212,26 @@ def build_batch_item(
         reply=result.reply,
         provider=result.provider,
         stored_message_id=result.stored_message_id,
+        delivery_status=(
+            delivery.status
+            if delivery is not None
+            else "skipped"
+        ),
+        delivery_provider=(
+            delivery.provider
+            if delivery is not None
+            else None
+        ),
+        outbound_message_id=(
+            delivery.outbound_message_id
+            if delivery is not None
+            else None
+        ),
+        delivery_error=(
+            delivery.error
+            if delivery is not None
+            else None
+        ),
     )
 
 
@@ -251,7 +276,9 @@ def health_check() -> HealthResponse:
     tags=["Chat"],
     summary="Generate and store a conversation-aware response",
 )
-def chat(request: ChatRequest) -> ChatResponse:
+def chat(
+    request: ChatRequest,
+) -> ChatResponse:
     """Process a chatbot message through the reusable service."""
     try:
         result = process_chat_message(
@@ -346,6 +373,7 @@ def verify_whatsapp_webhook_endpoint(
     response_model=WhatsAppWebhookResponse,
     status_code=status.HTTP_200_OK,
     tags=["WhatsApp"],
+    summary="Process an unsigned local WhatsApp message",
 )
 def mock_whatsapp_webhook(
     request: WhatsAppWebhookRequest,
@@ -378,6 +406,7 @@ def mock_whatsapp_webhook(
     response_model=WhatsAppWebhookResponse,
     status_code=status.HTTP_200_OK,
     tags=["WhatsApp"],
+    summary="Process a signed simplified WhatsApp message",
 )
 async def signed_whatsapp_webhook(
     request: Request,
@@ -456,6 +485,7 @@ async def signed_whatsapp_webhook(
     response_model=None,
     status_code=status.HTTP_200_OK,
     tags=["WhatsApp"],
+    summary="Process and deliver replies for a signed Meta batch",
 )
 async def meta_whatsapp_webhook(
     request: Request,
@@ -464,7 +494,7 @@ async def meta_whatsapp_webhook(
         alias="X-Hub-Signature-256",
     ),
 ) -> JSONResponse:
-    """Authenticate and process an entire Meta webhook batch."""
+    """Authenticate, process, and deliver replies for a Meta batch."""
     raw_payload = await request.body()
 
     try:
@@ -500,6 +530,9 @@ async def meta_whatsapp_webhook(
                 ignored=1,
                 unsupported=0,
                 failed=0,
+                deliveries_sent=0,
+                deliveries_failed=0,
+                deliveries_skipped=0,
                 results=[],
             )
 
@@ -509,6 +542,7 @@ async def meta_whatsapp_webhook(
                     mode="json"
                 ),
             )
+
         except MetaWhatsAppPayloadError as error:
             raise HTTPException(
                 status_code=(
@@ -521,6 +555,10 @@ async def meta_whatsapp_webhook(
         duplicate_count = 0
         failed_count = 0
 
+        deliveries_sent = 0
+        deliveries_failed = 0
+        deliveries_skipped = 0
+
         batch_items: list[
             MetaWhatsAppBatchItemResponse
         ] = []
@@ -531,16 +569,37 @@ async def meta_whatsapp_webhook(
                     internal_request
                 )
 
-                batch_items.append(
-                    build_batch_item(
-                        item_result
+                if item_result.status == "duplicate":
+                    duplicate_count += 1
+                    deliveries_skipped += 1
+
+                    batch_items.append(
+                        build_batch_item(
+                            result=item_result,
+                            delivery=None,
+                        )
                     )
+
+                    continue
+
+                processed_count += 1
+
+                delivery_result = deliver_whatsapp_reply(
+                    recipient_phone=item_result.sender_phone,
+                    message=item_result.reply,
                 )
 
-                if item_result.status == "processed":
-                    processed_count += 1
-                elif item_result.status == "duplicate":
-                    duplicate_count += 1
+                if delivery_result.status == "sent":
+                    deliveries_sent += 1
+                else:
+                    deliveries_failed += 1
+
+                batch_items.append(
+                    build_batch_item(
+                        result=item_result,
+                        delivery=delivery_result,
+                    )
+                )
 
             except (
                 PromptTemplateError,
@@ -548,6 +607,7 @@ async def meta_whatsapp_webhook(
                 ValueError,
             ) as error:
                 failed_count += 1
+                deliveries_skipped += 1
 
                 batch_items.append(
                     MetaWhatsAppBatchItemResponse(
@@ -559,6 +619,7 @@ async def meta_whatsapp_webhook(
                             internal_request.sender_phone
                         ),
                         error=str(error),
+                        delivery_status="skipped",
                     )
                 )
 
@@ -572,6 +633,9 @@ async def meta_whatsapp_webhook(
                 parsed_batch.unsupported_messages
             ),
             failed=failed_count,
+            deliveries_sent=deliveries_sent,
+            deliveries_failed=deliveries_failed,
+            deliveries_skipped=deliveries_skipped,
             results=batch_items,
         )
 
@@ -603,6 +667,7 @@ async def meta_whatsapp_webhook(
     response_model=ConversationListResponse,
     status_code=status.HTTP_200_OK,
     tags=["Conversations"],
+    summary="List and search conversations",
 )
 def list_conversations(
     limit: int = Query(
@@ -662,6 +727,7 @@ def list_conversations(
     response_model=ConversationResponse,
     status_code=status.HTTP_200_OK,
     tags=["Conversations"],
+    summary="Retrieve paginated conversation history",
 )
 def get_conversation(
     session_id: str,
@@ -729,6 +795,7 @@ def get_conversation(
     response_model=ConversationDeletionResponse,
     status_code=status.HTTP_200_OK,
     tags=["Conversations"],
+    summary="Delete a stored conversation",
 )
 def delete_conversation(
     session_id: str,

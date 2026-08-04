@@ -1,4 +1,4 @@
-"""API tests for signed Meta WhatsApp webhook batches."""
+"""API tests for Meta WhatsApp processing and reply delivery."""
 
 import json
 from unittest.mock import Mock
@@ -8,6 +8,9 @@ from fastapi.testclient import TestClient
 import app.api as api_module
 from app.exceptions import ProviderError
 from app.schemas import WhatsAppWebhookResponse
+from app.whatsapp_delivery_service import (
+    WhatsAppReplyDelivery,
+)
 from app.whatsapp_signature import (
     WhatsAppSignatureConfigurationError,
     generate_whatsapp_signature,
@@ -51,7 +54,9 @@ def create_meta_payload() -> dict[str, object]:
                                 create_text_message(
                                     sender_phone="2348012345678",
                                     message_id="wamid.meta-api-001",
-                                    body="What time does the clinic open?",
+                                    body=(
+                                        "What time does the clinic open?"
+                                    ),
                                 )
                             ],
                         },
@@ -88,7 +93,7 @@ def create_webhook_result(
     status_value: str = "processed",
     stored_message_id: int = 1,
 ) -> WhatsAppWebhookResponse:
-    """Create a synthetic single-message result."""
+    """Create a synthetic message-processing result."""
     return WhatsAppWebhookResponse(
         status=status_value,
         inbound_message_id=message_id,
@@ -97,6 +102,23 @@ def create_webhook_result(
         reply=f"Reply for {message_id}",
         provider="MockLLMProvider",
         stored_message_id=stored_message_id,
+    )
+
+
+def create_delivery_result(
+    sender_phone: str,
+    message_id: str,
+) -> WhatsAppReplyDelivery:
+    """Create a successful synthetic delivery result."""
+    return WhatsAppReplyDelivery(
+        status="sent",
+        recipient_phone=sender_phone,
+        provider="MockWhatsAppSender",
+        outbound_message_id=(
+            f"mock-out-{message_id}"
+        ),
+        message=f"Reply for {message_id}",
+        error=None,
     )
 
 
@@ -129,16 +151,25 @@ def post_payload(
     )
 
 
-def test_single_message_batch_is_processed(
+def test_processed_message_is_delivered(
     monkeypatch,
 ) -> None:
-    """One text message should produce one batch result."""
+    """A newly processed reply should be sent outbound."""
     configure_secret(monkeypatch)
 
+    process_result = create_webhook_result(
+        message_id="wamid.meta-api-001",
+        sender_phone="2348012345678",
+    )
+
     process_mock = Mock(
-        return_value=create_webhook_result(
-            message_id="wamid.meta-api-001",
+        return_value=process_result
+    )
+
+    delivery_mock = Mock(
+        return_value=create_delivery_result(
             sender_phone="2348012345678",
+            message_id="wamid.meta-api-001",
         )
     )
 
@@ -148,40 +179,159 @@ def test_single_message_batch_is_processed(
         process_mock,
     )
 
+    monkeypatch.setattr(
+        api_module,
+        "deliver_whatsapp_reply",
+        delivery_mock,
+    )
+
     response = post_payload(
         create_meta_payload()
     )
 
+    response_data = response.json()
+
     assert response.status_code == 200
-    assert response.json() == {
-        "status": "completed",
-        "received": 1,
-        "processed": 1,
-        "duplicates": 0,
-        "ignored": 0,
-        "unsupported": 0,
-        "failed": 0,
-        "results": [
-            {
-                "status": "processed",
-                "inbound_message_id": "wamid.meta-api-001",
-                "sender_phone": "2348012345678",
-                "session_id": "whatsapp-2348012345678",
-                "reply": "Reply for wamid.meta-api-001",
-                "provider": "MockLLMProvider",
-                "stored_message_id": 1,
-                "error": None,
-            }
-        ],
-    }
+    assert response_data["received"] == 1
+    assert response_data["processed"] == 1
+    assert response_data["duplicates"] == 0
+    assert response_data["deliveries_sent"] == 1
+    assert response_data["deliveries_failed"] == 0
+    assert response_data["deliveries_skipped"] == 0
 
-    process_mock.assert_called_once()
+    item = response_data["results"][0]
+
+    assert item["status"] == "processed"
+    assert item["delivery_status"] == "sent"
+    assert item["delivery_provider"] == (
+        "MockWhatsAppSender"
+    )
+    assert item["outbound_message_id"] == (
+        "mock-out-wamid.meta-api-001"
+    )
+    assert item["delivery_error"] is None
+
+    delivery_mock.assert_called_once_with(
+        recipient_phone="2348012345678",
+        message="Reply for wamid.meta-api-001",
+    )
 
 
-def test_multiple_messages_are_processed(
+def test_duplicate_message_skips_delivery(
     monkeypatch,
 ) -> None:
-    """All supported messages in one delivery should be processed."""
+    """A duplicate inbound message should not be sent again."""
+    configure_secret(monkeypatch)
+
+    process_mock = Mock(
+        return_value=create_webhook_result(
+            message_id="wamid.meta-api-001",
+            sender_phone="2348012345678",
+            status_value="duplicate",
+        )
+    )
+
+    delivery_mock = Mock()
+
+    monkeypatch.setattr(
+        api_module,
+        "process_whatsapp_request",
+        process_mock,
+    )
+
+    monkeypatch.setattr(
+        api_module,
+        "deliver_whatsapp_reply",
+        delivery_mock,
+    )
+
+    response = post_payload(
+        create_meta_payload()
+    )
+
+    response_data = response.json()
+
+    assert response.status_code == 200
+    assert response_data["processed"] == 0
+    assert response_data["duplicates"] == 1
+    assert response_data["deliveries_sent"] == 0
+    assert response_data["deliveries_failed"] == 0
+    assert response_data["deliveries_skipped"] == 1
+
+    item = response_data["results"][0]
+
+    assert item["status"] == "duplicate"
+    assert item["delivery_status"] == "skipped"
+    assert item["delivery_provider"] is None
+    assert item["outbound_message_id"] is None
+
+    delivery_mock.assert_not_called()
+
+
+def test_delivery_failure_preserves_processed_reply(
+    monkeypatch,
+) -> None:
+    """A delivery failure should not undo successful processing."""
+    configure_secret(monkeypatch)
+
+    process_mock = Mock(
+        return_value=create_webhook_result(
+            message_id="wamid.meta-api-001",
+            sender_phone="2348012345678",
+        )
+    )
+
+    delivery_mock = Mock(
+        return_value=WhatsAppReplyDelivery(
+            status="failed",
+            recipient_phone="2348012345678",
+            provider=None,
+            outbound_message_id=None,
+            message="Reply for wamid.meta-api-001",
+            error="Temporary delivery failure.",
+        )
+    )
+
+    monkeypatch.setattr(
+        api_module,
+        "process_whatsapp_request",
+        process_mock,
+    )
+
+    monkeypatch.setattr(
+        api_module,
+        "deliver_whatsapp_reply",
+        delivery_mock,
+    )
+
+    response = post_payload(
+        create_meta_payload()
+    )
+
+    response_data = response.json()
+
+    assert response.status_code == 200
+    assert response_data["processed"] == 1
+    assert response_data["failed"] == 0
+    assert response_data["deliveries_sent"] == 0
+    assert response_data["deliveries_failed"] == 1
+
+    item = response_data["results"][0]
+
+    assert item["status"] == "processed"
+    assert item["reply"] == (
+        "Reply for wamid.meta-api-001"
+    )
+    assert item["delivery_status"] == "failed"
+    assert item["delivery_error"] == (
+        "Temporary delivery failure."
+    )
+
+
+def test_multiple_messages_are_processed_and_delivered(
+    monkeypatch,
+) -> None:
+    """Each newly processed message should be delivered."""
     configure_secret(monkeypatch)
 
     payload = create_meta_payload()
@@ -211,10 +361,29 @@ def test_multiple_messages_are_processed(
         ]
     )
 
+    delivery_mock = Mock(
+        side_effect=[
+            create_delivery_result(
+                sender_phone="2348012345678",
+                message_id="wamid.meta-api-001",
+            ),
+            create_delivery_result(
+                sender_phone="2348022222222",
+                message_id="wamid.meta-api-002",
+            ),
+        ]
+    )
+
     monkeypatch.setattr(
         api_module,
         "process_whatsapp_request",
         process_mock,
+    )
+
+    monkeypatch.setattr(
+        api_module,
+        "deliver_whatsapp_reply",
+        delivery_mock,
     )
 
     response = post_payload(payload)
@@ -223,23 +392,50 @@ def test_multiple_messages_are_processed(
     assert response.status_code == 200
     assert response_data["received"] == 2
     assert response_data["processed"] == 2
-    assert response_data["duplicates"] == 0
-    assert response_data["failed"] == 0
-    assert len(response_data["results"]) == 2
+    assert response_data["deliveries_sent"] == 2
+    assert response_data["deliveries_failed"] == 0
+    assert response_data["deliveries_skipped"] == 0
+
     assert process_mock.call_count == 2
+    assert delivery_mock.call_count == 2
 
 
-def test_batch_counts_duplicate_result(
+def test_mixed_processed_and_duplicate_delivery_counts(
     monkeypatch,
 ) -> None:
-    """Duplicate messages should be counted separately."""
+    """A mixed batch should send only newly processed replies."""
     configure_secret(monkeypatch)
 
+    payload = create_meta_payload()
+
+    value = payload["entry"][0]["changes"][0]["value"]
+
+    value["messages"].append(
+        create_text_message(
+            sender_phone="2348022222222",
+            message_id="wamid.meta-api-002",
+            body="Second question",
+        )
+    )
+
     process_mock = Mock(
-        return_value=create_webhook_result(
-            message_id="wamid.meta-api-001",
-            sender_phone="2348012345678",
-            status_value="duplicate",
+        side_effect=[
+            create_webhook_result(
+                message_id="wamid.meta-api-001",
+                sender_phone="2348012345678",
+                status_value="duplicate",
+            ),
+            create_webhook_result(
+                message_id="wamid.meta-api-002",
+                sender_phone="2348022222222",
+            ),
+        ]
+    )
+
+    delivery_mock = Mock(
+        return_value=create_delivery_result(
+            sender_phone="2348022222222",
+            message_id="wamid.meta-api-002",
         )
     )
 
@@ -247,6 +443,49 @@ def test_batch_counts_duplicate_result(
         api_module,
         "process_whatsapp_request",
         process_mock,
+    )
+
+    monkeypatch.setattr(
+        api_module,
+        "deliver_whatsapp_reply",
+        delivery_mock,
+    )
+
+    response = post_payload(payload)
+    response_data = response.json()
+
+    assert response.status_code == 200
+    assert response_data["processed"] == 1
+    assert response_data["duplicates"] == 1
+    assert response_data["deliveries_sent"] == 1
+    assert response_data["deliveries_skipped"] == 1
+    assert delivery_mock.call_count == 1
+
+
+def test_processing_failure_skips_delivery(
+    monkeypatch,
+) -> None:
+    """A processing failure should not call the sender."""
+    configure_secret(monkeypatch)
+
+    process_mock = Mock(
+        side_effect=ProviderError(
+            "Provider temporarily unavailable."
+        )
+    )
+
+    delivery_mock = Mock()
+
+    monkeypatch.setattr(
+        api_module,
+        "process_whatsapp_request",
+        process_mock,
+    )
+
+    monkeypatch.setattr(
+        api_module,
+        "deliver_whatsapp_reply",
+        delivery_mock,
     )
 
     response = post_payload(
@@ -257,16 +496,26 @@ def test_batch_counts_duplicate_result(
 
     assert response.status_code == 200
     assert response_data["processed"] == 0
-    assert response_data["duplicates"] == 1
-    assert response_data["results"][0]["status"] == (
-        "duplicate"
+    assert response_data["failed"] == 1
+    assert response_data["deliveries_sent"] == 0
+    assert response_data["deliveries_failed"] == 0
+    assert response_data["deliveries_skipped"] == 1
+
+    item = response_data["results"][0]
+
+    assert item["status"] == "failed"
+    assert item["delivery_status"] == "skipped"
+    assert item["error"] == (
+        "Provider temporarily unavailable."
     )
 
+    delivery_mock.assert_not_called()
 
-def test_batch_counts_unsupported_message(
+
+def test_unsupported_message_is_counted(
     monkeypatch,
 ) -> None:
-    """Unsupported items should be counted without failing text items."""
+    """Unsupported items should not block supported delivery."""
     configure_secret(monkeypatch)
 
     payload = create_meta_payload()
@@ -296,13 +545,25 @@ def test_batch_counts_unsupported_message(
         ),
     )
 
+    monkeypatch.setattr(
+        api_module,
+        "deliver_whatsapp_reply",
+        Mock(
+            return_value=create_delivery_result(
+                sender_phone="2348012345678",
+                message_id="wamid.meta-api-001",
+            )
+        ),
+    )
+
     response = post_payload(payload)
     response_data = response.json()
 
     assert response.status_code == 200
     assert response_data["received"] == 1
-    assert response_data["processed"] == 1
     assert response_data["unsupported"] == 1
+    assert response_data["processed"] == 1
+    assert response_data["deliveries_sent"] == 1
 
 
 def test_status_only_event_is_ignored(
@@ -324,11 +585,18 @@ def test_status_only_event_is_ignored(
     ]
 
     process_mock = Mock()
+    delivery_mock = Mock()
 
     monkeypatch.setattr(
         api_module,
         "process_whatsapp_request",
         process_mock,
+    )
+
+    monkeypatch.setattr(
+        api_module,
+        "deliver_whatsapp_reply",
+        delivery_mock,
     )
 
     response = post_payload(payload)
@@ -342,63 +610,14 @@ def test_status_only_event_is_ignored(
         "ignored": 1,
         "unsupported": 0,
         "failed": 0,
+        "deliveries_sent": 0,
+        "deliveries_failed": 0,
+        "deliveries_skipped": 0,
         "results": [],
     }
 
     process_mock.assert_not_called()
-
-
-def test_one_message_failure_does_not_stop_batch(
-    monkeypatch,
-) -> None:
-    """A failed item should not prevent later items from running."""
-    configure_secret(monkeypatch)
-
-    payload = create_meta_payload()
-
-    value = payload["entry"][0]["changes"][0]["value"]
-
-    value["messages"].append(
-        create_text_message(
-            sender_phone="2348022222222",
-            message_id="wamid.meta-api-002",
-            body="Second message",
-        )
-    )
-
-    process_mock = Mock(
-        side_effect=[
-            ProviderError(
-                "Provider temporarily unavailable."
-            ),
-            create_webhook_result(
-                message_id="wamid.meta-api-002",
-                sender_phone="2348022222222",
-                stored_message_id=2,
-            ),
-        ]
-    )
-
-    monkeypatch.setattr(
-        api_module,
-        "process_whatsapp_request",
-        process_mock,
-    )
-
-    response = post_payload(payload)
-    response_data = response.json()
-
-    assert response.status_code == 200
-    assert response_data["received"] == 2
-    assert response_data["processed"] == 1
-    assert response_data["failed"] == 1
-    assert response_data["results"][0]["status"] == "failed"
-    assert response_data["results"][0]["error"] == (
-        "Provider temporarily unavailable."
-    )
-    assert response_data["results"][1]["status"] == (
-        "processed"
-    )
+    delivery_mock.assert_not_called()
 
 
 def test_invalid_signature_returns_403(
